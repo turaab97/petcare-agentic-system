@@ -474,9 +474,20 @@ The PetCare agent draws triage knowledge, symptom data, and red-flag rules from 
 
 ## Current Status
 
-This branch contains the **PetCare Triage & Smart Booking Agent** project scaffolding, architecture documentation, and implementation stubs.
+> **⚠️ This project has NOT been tested yet.** The code, agents, and endpoints are scaffolded and documented but have not been run or validated end-to-end. Expect breaking issues on first run. Testing and iteration is the immediate next step.
 
-Active development is in progress on the `PetCare_Syed` branch.
+| Area | Status |
+|------|--------|
+| Architecture & documentation | ✅ Complete |
+| Agent implementations (A–G) | ✅ Scaffolded (untested) |
+| Orchestrator | ✅ Scaffolded (untested) |
+| Flask API server | ✅ Scaffolded (untested) |
+| Frontend (chat + voice + multilingual) | ✅ Scaffolded (untested) |
+| Docker / docker-compose | ✅ Written (untested) |
+| n8n workflows | ✅ Documented (not configured) |
+| End-to-end integration testing | ❌ Not started |
+| Unit / agent-level testing | ❌ Not started |
+| Deployment to cloud (Render/Railway) | ❌ Not started |
 
 ---
 
