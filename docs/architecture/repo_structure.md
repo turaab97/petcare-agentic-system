@@ -86,11 +86,7 @@ petcare-agentic-system/
 │   │   ├── routing/                # Agent E spec + test fixtures
 │   │   ├── scheduling/             # Agent F spec + test fixtures
 │   │   ├── guidance_summary/       # Agent G spec + test fixtures
-│   │   ├── orchestrator/           # Orchestrator spec + test fixtures
-│   │   └── ...                     # Additional agent specs from earlier iterations
-│   │
-│   ├── current_version/            # Current workflow documentation
-│   │   └── workflow_guide.md
+│   │   └── orchestrator/           # Orchestrator spec + test fixtures
 │   │
 │   ├── images/                     # Architecture diagrams and visuals
 │   │   └── architecture_workflow.png
@@ -106,14 +102,6 @@ petcare-agentic-system/
 │   │
 │   ├── test_scenarios.md           # End-to-end test cases + validation checklist
 │   └── CHANGELOG.md                # Project changelog and reading order
-│
-└── src/                            # Legacy/prototype code (from main branch)
-    ├── app.py                      # Streamlit prototype UI
-    ├── agents/                     # Early agent stubs
-    ├── orchestrator/               # Early orchestrator stubs
-    ├── schemas/                    # Schema placeholders
-    ├── shared/                     # Shared utilities (config, LLM helpers)
-    └── ui/                         # Prototype UI module
 ```
 
 ---
@@ -156,11 +144,7 @@ Vanilla HTML/CSS/JS — no build step, no npm, no framework. Served directly by 
 
 ### `docs/`
 
-All documentation, organized by topic. Architecture docs describe the system design. Agent specs provide per-agent details and test fixtures. The `original_main/` folder preserves the foundational docs from the main branch for reference.
-
-### `src/`
-
-Legacy/prototype code from the main branch. Contains an early Streamlit UI and initial agent stubs built before the Flask + frontend approach was adopted. Preserved for reference; active development uses `backend/` and `frontend/`.
+All documentation, organized by topic. Architecture docs describe the system design. Agent specs provide per-agent details and test fixtures (intake, safety_gate, triage, routing, scheduling, guidance_summary, orchestrator). The `original_main/` folder preserves the foundational docs from the main branch for reference.
 
 ---
 

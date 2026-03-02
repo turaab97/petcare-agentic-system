@@ -443,8 +443,8 @@ python api_server.py
 │   └── logs/                    # Runtime logs
 ├── docs/                        # Documentation
 │   ├── architecture/            # System-level design docs
-│   ├── agent_specs/             # Per-agent design work packages
-│   └── test_scenarios.md        # End-to-end test cases
+│   ├── agent_specs/             # Per-agent design work packages (intake, triage, etc.)
+│   └── original_main/           # Preserved docs from main branch (Fergie's design)
 ├── Dockerfile                   # Single-container deployment
 ├── docker-compose.yml           # Multi-container: petcare + n8n
 ├── start.sh / start.ps1         # One-click Docker start
@@ -528,5 +528,64 @@ This project is structured for modular expansion. Contributions should preserve:
 - Rule-grounded triage design
 
 ---
+
+## Data Sources
+
+The PetCare agent draws triage knowledge, symptom data, and red-flag rules from the following sources:
+
+### Symptom & Triage Knowledge
+
+| Source | Type | Usage |
+|--------|------|-------|
+| [Hugging Face: pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Open dataset (2,000 labeled samples) | Symptom classification training/validation -- covers skin irritations, digestive issues, parasites, ear infections, mobility problems |
+| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Reference | Triage logic patterns -- 165 algorithms built by veterinarians, 4M+ questions processed |
+| [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | NLP model (500M+ words from 5.1M UK vet records) | Reference for veterinary NLP and disease coding patterns |
+
+### Safety & Toxicology
+
+| Source | Type | Usage |
+|--------|------|-------|
+| [ASPCA Animal Poison Control (AnTox)](https://www.aspcapro.org/antox) | Reference database (1M+ cases) | Red-flag rules for toxin ingestion -- top toxins, species-specific risks |
+| [ASPCA Top Toxins 2024](https://www.aspcapro.org/resource/top-10-toxins-2024) | Published list | Prioritized toxin list for Safety Gate agent (OTC meds 16.5%, food/drink 16.1%, chocolate 13.6%, etc.) |
+| Veterinary emergency textbooks | Clinical reference | Emergency red-flag definitions (GDV, urinary blockage, dyspnea, seizure, etc.) |
+
+### Clinic Operations (Synthetic / Mock)
+
+| Source | Type | Usage |
+|--------|------|-------|
+| `backend/data/clinic_rules.json` | Synthetic config | Triage rules, routing maps, provider specialties, species notes |
+| `backend/data/red_flags.json` | Curated list (50+ entries) | Emergency red-flag triggers compiled from ASPCA + veterinary emergency guidelines |
+| `backend/data/available_slots.json` | Mock data | Simulated clinic schedule for appointment booking POC |
+
+### Data Strategy
+
+- **POC phase:** All data is synthetic or publicly available. No real patient/pet health information (PHI) is used.
+- **Future integration:** Clinic scheduling APIs, EMR/CRM systems, real-time appointment availability.
+- **Privacy:** Session-only memory. No persistent storage of owner PII. Anonymized logs for evaluation only.
+
+---
+
+## Current Status
+
+> **⚠️ This project has NOT been tested yet.** The code, agents, and endpoints are scaffolded and documented but have not been run or validated end-to-end. Expect breaking issues on first run. Testing and iteration is the immediate next step.
+
+| Area | Status |
+|------|--------|
+| Architecture & documentation | ✅ Complete |
+| Agent implementations (A–G) | ✅ Scaffolded (untested) |
+| Orchestrator | ✅ Scaffolded (untested) |
+| Flask API server | ✅ Scaffolded (untested) |
+| Frontend (chat + voice + multilingual) | ✅ Scaffolded (untested) |
+| Docker / docker-compose | ✅ Written (untested) |
+| n8n workflows | ✅ Documented (not configured) |
+| End-to-end integration testing | ❌ Not started |
+| Unit / agent-level testing | ❌ Not started |
+| Deployment to cloud (Render/Railway) | ❌ Not started |
+
+---
+
+## Summary
+
+This project demonstrates how a **multi-agent architecture with a central orchestrator** can deliver structured, safe, and explainable decision support for veterinary intake triage and appointment booking, while maintaining clear scope and academic rigor.
 
 Built with safety-first agent architecture by **Team Broadview**.

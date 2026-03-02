@@ -12,6 +12,18 @@ This file tracks the evolution of the PetCare Triage & Smart Booking Agent proje
 
 ## Branch: `PetCare_Syed` on `FergieFeng/petcare-agentic-system`
 
+### 2026-03-01 — Repository cleanup (PetCare-only)
+
+**Commit:** `chore: remove resume/job-related and legacy files; PetCare-only repo`
+
+Removed all files not relevant to the PetCare Triage & Smart Booking Agent:
+
+- **Removed** `docs/agent_specs/jd_analysis/`, `resume_profiling/`, `application_strategy/`, `hidden_signal/`, `evidence_citation/`, `hard_match/` — these were from the resume-alignment-engine template; PetCare uses only `intake`, `safety_gate`, `confidence_gate`, `triage`, `routing`, `scheduling`, `guidance_summary`, `orchestrator`.
+- **Removed** `src/` — legacy prototype code (Streamlit UI, JD/resume agent stubs). Active code lives in `backend/` and `frontend/`.
+- **Removed** `docs/current_version/` — contained Resume Alignment Engine workflow guide; not applicable to PetCare.
+- **Removed** empty duplicate directories (`docs/agent_specs 2`, `docs/architecture 2`, etc.).
+- **Updated** `README.md` and `docs/architecture/repo_structure.md` to drop references to `src/` and `current_version/`.
+
 ### 2026-03-01 — Merge from main + content integration
 
 **Commit:** `docs: integrate main-branch content — data model, test scenarios, voice safety, repo structure`
@@ -117,7 +129,7 @@ Created foundational docs: `README.md`, `docs/architecture.md`, `docs/agent-desi
 - Active development branch: `PetCare_Syed`
 - Do NOT merge into `main` without team review
 - The `docs/original_main/` folder preserves all main-branch docs for reference
-- The `src/` folder contains legacy prototype code from main — active code is in `backend/` and `frontend/`
+- Active code is in `backend/` and `frontend/` only (legacy `src/` and resume/job-related specs were removed in repo cleanup)
 - Keep this changelog updated when adding new features or docs
 
 ---
