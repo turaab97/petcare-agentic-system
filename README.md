@@ -303,9 +303,8 @@ Open [http://localhost:5002](http://localhost:5002) in your browser.
 │   └── logs/                    # Runtime logs
 ├── docs/                        # Documentation
 │   ├── architecture/            # System-level design docs
-│   ├── agent_specs/             # Per-agent design work packages
-│   └── current_version/         # Preserved docs from main branch
-├── src/                         # Original source (from main branch)
+│   ├── agent_specs/             # Per-agent design work packages (intake, triage, etc.)
+│   └── original_main/           # Preserved docs from main branch (Fergie's design)
 ├── technical_report.md          # Technical report (assignment deliverable)
 ├── PROJECT_PLAN.md              # Project plan and timeline
 ├── Dockerfile                   # Docker containerization (petcare-agent)
