@@ -2,9 +2,22 @@
 
 **Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview | **Date:** March 1, 2026
 
-**Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 2, 2026*
+**Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 3, 2026*
 
 This document is the **action plan** to go from “scaffolded, untested” to a **working, demo-ready POC**. Follow in order. Update the README “Next steps” table as you complete each item.
+
+---
+
+## Plan update (March 2026)
+
+**Done:** Design, architecture, and code updated to incorporate feedback:
+
+- **Text-first MVP** — Documented in README, AGENT_DESIGN_CANVAS, scope_and_roles, BASELINE_METHODOLOGY. Voice is optional; baseline evaluation is text-based.
+- **Baseline comparison** — Manual receptionist phone script (Option 1); same test scenarios and four metrics for both baseline and agent.
+- **Four metrics** — Time to complete intake, required fields captured (>90%), triage accuracy (>80%), red-flag detection (100%) are in design docs and BASELINE_METHODOLOGY; architecture doc describes where each is measured.
+- **Code for evaluation** — Session has `first_message_at`; `GET /api/session/<id>/summary` returns `evaluation_metrics` (required_fields_captured_pct, red_flag_triggered, triage_urgency_tier, timestamps). Confidence Gate outputs `required_fields_captured_pct` for M1.
+
+**Immediate next steps (unchanged):** Wire Orchestrator into API (Step 1) → Unblock Intake (Step 2) → Smoke test (Step 3) → Validate scenarios (4–5) → Deploy (7) → Evaluation (9) → Report + demo (10). Step 6 (voice) is optional for MVP.
 
 ---
 
@@ -27,6 +40,8 @@ This document is the **action plan** to go from “scaffolded, untested” to a 
 **Main gap:** The API never invokes the Orchestrator, and the Intake agent never marks intake complete, so the full pipeline never runs end-to-end.
 
 **From Diana's branch (merged):** Baseline evaluation methodology is documented in [BASELINE_METHODOLOGY.md](docs/BASELINE_METHODOLOGY.md) — manual receptionist script (Baseline-1), M1–M6 metrics, gold labels, and comparison procedure for evaluation (Step 9 below).
+
+**MVP scope:** Ship **text-first**; voice is optional and must not block demo or baseline comparison. Evaluation uses four metrics for both baseline and agent: time to complete intake, required fields captured (>90%), triage accuracy (>80%), red-flag detection (100%).
 
 ---
 

@@ -17,6 +17,7 @@ It is designed for **team-based development**, where each team member can own on
 
 ## In Scope
 
+- **MVP delivery: text-first.** Ship with text-based chat; voice is optional/bonus and must not block demo or baseline comparison (clean working pipeline and solid test results are the priority).
 - Designing each sub-agent's **micro-workflow**, prompt strategy, and edge cases
 - Defining **input/output JSON** contracts per agent (schema-aligned)
 - Implementing agent logic as:

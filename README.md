@@ -12,7 +12,8 @@ A safety-first, multi-agent architecture designed to assist veterinary clinics w
 
 PetCare Agentic System is an AI receptionist framework built to reduce call overload in veterinary clinics by:
 
-- Collecting structured symptom information via chat or voice (7 languages)
+- **MVP: text-first** — Structured symptom intake via **chat (text)**; voice is optional/bonus and not required for demo or baseline evaluation (see [BASELINE_METHODOLOGY](docs/BASELINE_METHODOLOGY.md)).
+- Collecting structured symptom information via chat (or voice when enabled; 7 languages)
 - Safely triaging urgency levels with deterministic red-flag detection
 - Routing cases to the correct service line or veterinarian
 - Booking appointments intelligently from clinic schedule
@@ -349,7 +350,7 @@ All POC data is synthetic. No real patient/pet health information (PHI) is used.
 
 ## 📋 Next Steps (update as we knock them off)
 
-**Due:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Today: March 2, 2026*
+**Due:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 3, 2026*
 
 | # | Step | Status |
 |---|------|--------|

@@ -167,6 +167,13 @@ class ConfidenceGateAgent:
                 f"missing_req={missing_required}, conflicts={conflicts}"
             )
 
+        # Required fields captured % for baseline comparison (M1: target >90%)
+        total_required = len(REQUIRED_FIELDS)
+        captured_required = total_required - len(missing_required)
+        required_fields_captured_pct = (
+            (captured_required / total_required * 100.0) if total_required else 0.0
+        )
+
         return {
             'agent_name': self.agent_name,
             'status': status,
@@ -175,7 +182,8 @@ class ConfidenceGateAgent:
                 'missing_required': missing_required,
                 'missing_important': missing_important,
                 'conflicts': conflicts,
-                'action': action
+                'action': action,
+                'required_fields_captured_pct': round(required_fields_captured_pct, 1),
             },
             'confidence': completeness,
             'warnings': [

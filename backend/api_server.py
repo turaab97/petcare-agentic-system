@@ -255,13 +255,17 @@ def handle_message(session_id):
 
     lang_code = session['language']
 
+    now_iso = datetime.utcnow().isoformat()
     session['messages'].append({
         'role': 'user',
         'content': user_message,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': now_iso,
         'source': data.get('source', 'text'),
         'language': lang_code
     })
+    # For baseline comparison: time to complete intake (first message timestamp)
+    if not session.get('first_message_at'):
+        session['first_message_at'] = now_iso
 
     # -----------------------------------------------------------------------
     # TODO: Wire up the Orchestrator pipeline here
@@ -311,13 +315,26 @@ def get_summary(session_id):
         return jsonify({'error': 'Session not found'}), 404
 
     session = sessions[session_id]
+    # Evaluation metrics for baseline comparison (M1–M6): time, required fields, triage, red-flag
+    out = session.get('agent_outputs', {})
+    cg = out.get('confidence_gate', {}).get('output', {})
+    sg = out.get('safety_gate', {}).get('output', {})
+    tri = out.get('triage', {}).get('output', {})
+    evaluation_metrics = {
+        'created_at': session.get('created_at'),
+        'first_message_at': session.get('first_message_at'),
+        'required_fields_captured_pct': cg.get('required_fields_captured_pct'),
+        'red_flag_triggered': sg.get('red_flag_detected', False),
+        'triage_urgency_tier': tri.get('urgency_tier'),
+    }
     return jsonify({
         'session_id': session_id,
         'state': session['state'],
         'language': session.get('language', 'en'),
         'pet_profile': session.get('pet_profile', {}),
-        'agent_outputs': session.get('agent_outputs', {}),
-        'messages': session.get('messages', [])
+        'agent_outputs': out,
+        'messages': session.get('messages', []),
+        'evaluation_metrics': evaluation_metrics,
     })
 
 

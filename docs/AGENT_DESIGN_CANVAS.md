@@ -44,7 +44,9 @@ A static prompt is brittle for routing logic and uncertainty handling; rule-base
 
 ### Implementation approach
 
-PetCare is implemented as an **orchestrator agent** that coordinates **seven specialized sub-agents**: Intake (A), Safety Gate (B), Confidence Gate (C), Triage (D), Routing (E), Scheduling (F), Guidance & Summary (G). This modular design improves safety, testability, and reliability, especially for high-stakes triage decisions. Backend: Flask; deployment: **Render** (recommended); voice and multilingual (7 languages) are supported.
+PetCare is implemented as an **orchestrator agent** that coordinates **seven specialized sub-agents**: Intake (A), Safety Gate (B), Confidence Gate (C), Triage (D), Routing (E), Scheduling (F), Guidance & Summary (G). This modular design improves safety, testability, and reliability, especially for high-stakes triage decisions. Backend: Flask; deployment: **Render** (recommended).
+
+**MVP scope (text-first; voice deferred):** Ship the MVP with **text-based chat first**. Interactive voice is harder to build and test; with limited time, a broken or unstable voice feature would hurt the demo more than help. The assignment rewards a **clean working pipeline with solid test results**, not extra features. Voice can be added as a **bonus** later if capacity allows; do not depend on it for the core demo or baseline comparison. Multilingual (7 languages) is supported for text; voice tiers remain optional/stretch.
 
 ---
 
@@ -192,15 +194,24 @@ flowchart TD
 
 ### How to measure success (MVP metrics)
 
-**Quality metrics:**
+We compare the **agent** against a **manual receptionist phone-script baseline** (same test scenarios). See `docs/BASELINE_METHODOLOGY.md` for the full procedure. Practically, we measure the same four dimensions for both baseline and agent:
 
-- Triage tier agreement rate with clinic staff (target ≥ 80% on test set)
+| Metric | Baseline (e.g. phone script) | Agent target |
+|--------|------------------------------|--------------|
+| **Time to complete intake** | e.g. 5 min | e.g. 2 min (target ≥30% reduction) |
+| **Required fields captured** | e.g. 70% | **Target >90%** |
+| **Triage accuracy** | e.g. inconsistent | **Target >80%** (vs gold labels) |
+| **Red-flag detection** | e.g. depends on staff | **Target 100%** (zero missed emergencies) |
+
+**Quality metrics (detail):**
+
+- Triage tier agreement rate with gold labels (target ≥ 80% on test set)
 - Routing accuracy to correct appointment type / provider pool (target ≥ 80%)
 - Intake completeness — % required fields captured (target ≥ 90%)
 
 **Operational metrics:**
 
-- Reduction in receptionist intake time per case (target 30%+)
+- Reduction in intake time per case vs baseline (target 30%+)
 - Reduction in re-bookings / mis-bookings (target 20%+ in pilot)
 
 **Safety:**

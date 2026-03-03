@@ -118,7 +118,20 @@ The system supports three tiers of voice interaction, enabling hands-free intake
 - Tier 3 uses a persistent WebSocket connection for speech-to-speech with sub-500ms latency
 - Voice endpoints: `/api/voice/transcribe` (Whisper STT) and `/api/voice/synthesize` (OpenAI TTS)
 
-See [TECH_STACK.md](../../TECH_STACK.md) for full voice tier comparison and implementation details.
+See [TECH_STACK.md](../../TECH_STACK.md) for full voice tier comparison and implementation details. **MVP:** Baseline evaluation and demo are **text-based**; voice is optional and does not affect the four evaluation metrics.
+
+## Evaluation and baseline comparison
+
+The system is evaluated against a **manual receptionist phone-script baseline** (Option 1 in [BASELINE_METHODOLOGY.md](../BASELINE_METHODOLOGY.md)). The same test scenarios are run through both baseline and agent; the same four metrics are measured:
+
+| Metric | Where it is measured / produced |
+|--------|---------------------------------|
+| **Time to complete intake** | Session timestamps: `created_at`, first user message time, and state transition to `complete` or `emergency`; pipeline `metadata.processing_time_ms` per request. Evaluator computes wall-clock from first message to intake complete. |
+| **Required fields captured** | Confidence Gate (C) output: `missing_required` and `required_fields_captured_pct` (M1). Exposed in `agent_outputs.confidence_gate` and in session summary for scoring. |
+| **Triage accuracy** | Triage Agent (D) output: `urgency_tier` in `agent_outputs.triage`. Compared to gold labels per scenario. |
+| **Red-flag detection** | Safety Gate (B) output: `red_flag_detected` and `red_flags` in `agent_outputs.safety_gate`. Target 100% on red-flag scenarios. |
+
+Session summary (`GET /api/session/<id>/summary`) and response metadata provide the data needed to fill the baseline-vs-agent results table (M1–M6) for the report and demo.
 
 ## Design Characteristics
 
@@ -127,7 +140,7 @@ See [TECH_STACK.md](../../TECH_STACK.md) for full voice tier comparison and impl
 - **Auditable:** every triage decision maps to symptom evidence.
 - **Schema-driven:** outputs follow strict validation for clinic integration.
 - **Provider-agnostic:** orchestration can call different LLM providers.
-- **Voice-ready:** multi-tier voice support for hands-free intake.
+- **Text-first MVP:** core pipeline and baseline evaluation are text-based; voice is optional (multi-tier voice available for stretch).
 
 ## Architectural Positioning
 

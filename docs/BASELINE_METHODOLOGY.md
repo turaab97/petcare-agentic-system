@@ -163,6 +163,17 @@ For each scenario, the team must agree on a gold label **before** running any te
 
 Compute the same metrics for Baseline-1 and the full system on every scenario.
 
+### Practical metrics (what to measure for both baseline and agent)
+
+| Metric | Baseline (phone script) | Agent target |
+|--------|--------------------------|--------------|
+| **Time to complete intake** | e.g. 5 min (stopwatch) | e.g. 2 min (target ≥30% reduction) |
+| **Required fields captured** | e.g. 70% | **>90%** |
+| **Triage accuracy** | e.g. inconsistent | **>80%** (vs gold labels) |
+| **Red-flag detection** | e.g. depends on staff | **100%** (zero missed emergencies) |
+
+These align with M1–M6 below and support a clear, demo-friendly comparison.
+
 ### M1 — Intake Completeness (Target ≥ 90%)
 % of required fields captured from the checklist.  
 `completeness = captured_required_fields / total_required_fields (8 fields)`
@@ -212,8 +223,9 @@ Count "booking errors" where selected urgency / provider / slot violates gold la
      - proposed slot
      - time (stopwatch)
 3. **Run the full PetCare system** on the same scenario text:
-   - Input via `POST /api/session/<id>/message`
-   - Save outputs: owner-facing urgency + guidance, clinic-facing structured JSON summary, timing
+   - Input via `POST /api/session/<id>/message` (text-based; voice not required for MVP).
+   - Save outputs: owner-facing urgency + guidance, clinic-facing structured JSON summary, timing.
+   - After pipeline completes, call `GET /api/session/<id>/summary` to obtain `evaluation_metrics`: `required_fields_captured_pct`, `red_flag_triggered`, `triage_urgency_tier`, `created_at`, `first_message_at` for scoring and time-to-complete calculation.
 4. **Score** both using metrics M1–M6 and fill in the results table above.
 5. **Summarize** in the report:
    - At least **one strong success case** (e.g., correct emergency escalation)
