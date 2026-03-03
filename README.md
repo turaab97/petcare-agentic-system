@@ -392,6 +392,7 @@ The system supports **three tiers** of voice interaction for hands-free intake (
 | [docs/architecture/repo_structure.md](docs/architecture/repo_structure.md) | Repository layout, directory responsibilities, onboarding guide |
 | [docs/architecture/scope_and_roles.md](docs/architecture/scope_and_roles.md) | Project scope, ownership, and collaboration model |
 | [docs/test_scenarios.md](docs/test_scenarios.md) | 6 end-to-end test scenarios with validation checklist |
+| [docs/BASELINE_METHODOLOGY.md](docs/BASELINE_METHODOLOGY.md) | **Baseline evaluation** (author: Diana Liu) — manual receptionist script, M1–M6 metrics, gold labels, results table |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | Full project changelog and reading order |
 | [docs/agent_specs/](docs/agent_specs/) | Per-agent assignable design work packages |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | Sprint-by-sprint project plan |
