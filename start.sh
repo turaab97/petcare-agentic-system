@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PetCare Triage & Smart Booking Agent -- Start Script (macOS / Linux)
-# Authors: Syed Ali Turab & Fergie Feng | Team: Broadview | Date: March 1, 2026
+# Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview | Date: March 1, 2026
 #
 # Usage: ./start.sh
 # Requires: Git, Docker Desktop

@@ -1,7 +1,7 @@
 /**
  * PetCare Triage Assistant -- Frontend Logic
  *
- * Authors: Syed Ali Turab & Fergie Feng | Team: Broadview
+ * Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
  * Date:   March 1, 2026
  *
  * Handles the chat interface, session management, voice interaction,

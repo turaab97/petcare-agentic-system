@@ -1,6 +1,6 @@
 # PetCare Triage & Smart Booking Agent -- Deployment Guide
 
-**Authors:** Syed Ali Turab & Fergie Feng | **Team:** Broadview
+**Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview
 **Date:** March 1, 2026
 
 Step-by-step instructions for deploying the PetCare Agent locally, with Docker, and to the cloud.

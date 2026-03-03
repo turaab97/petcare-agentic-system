@@ -1,7 +1,7 @@
 """
 PetCare Triage & Smart Booking Agent -- API Server
 
-Authors: Syed Ali Turab & Fergie Feng | Team: Broadview
+Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
 
 Flask-based API server that serves the frontend and handles

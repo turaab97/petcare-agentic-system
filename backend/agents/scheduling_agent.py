@@ -1,7 +1,7 @@
 """
 Sub-Agent F: Scheduling Agent
 
-Authors: Syed Ali Turab & Fergie Feng | Team: Broadview
+Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
 
 Proposes available appointment slots based on urgency tier,

@@ -1,6 +1,6 @@
 # Next Steps to Build the PetCare POC
 
-**Authors:** Syed Ali Turab & Fergie Feng | **Team:** Broadview | **Date:** March 1, 2026
+**Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview | **Date:** March 1, 2026
 
 **Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 2, 2026*
 

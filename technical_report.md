@@ -1,6 +1,6 @@
 # PetCare Triage & Smart Booking Agent -- Technical Report
 
-**Authors:** Syed Ali Turab & Fergie Feng | **Team:** Broadview
+**Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview
 **Date:** March 1, 2026
 
 ---

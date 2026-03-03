@@ -1,7 +1,7 @@
 """
 Sub-Agent E: Routing Agent
 
-Authors: Syed Ali Turab & Fergie Feng | Team: Broadview
+Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
 
 Maps symptom category to appointment type and provider pool

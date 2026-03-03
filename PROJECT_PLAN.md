@@ -1,6 +1,6 @@
 # PetCare Triage & Smart Booking Agent -- Project Plan
 
-**Authors:** Syed Ali Turab & Fergie Feng | **Team:** Broadview
+**Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview
 **Date:** March 1, 2026
 
 **Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026

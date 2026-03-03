@@ -1,6 +1,6 @@
 # 🐾 PetCare Agentic System
 
-**Authors:** Syed Ali Turab & Fergie Feng | **Team:** Broadview
+**Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview
 **Date:** March 1, 2026
 
 AI-powered Veterinary Triage & Smart Booking System

@@ -1,7 +1,7 @@
 """
 PetCare Triage & Smart Booking Agent -- Orchestrator
 
-Authors: Syed Ali Turab & Fergie Feng | Team: Broadview
+Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
 
 Central coordinator for the 7 sub-agent pipeline:
