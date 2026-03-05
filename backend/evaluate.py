@@ -2,6 +2,8 @@
 PetCare Evaluation Script — M1-M4 Baseline Comparison
 Runs 6 synthetic test scenarios against the live API and prints scored results.
 
+Author: Syed Ali Turab | Team: Broadview | Date: March 4, 2026
+
 Usage:
   python backend/evaluate.py
 
@@ -15,8 +17,10 @@ import json
 import time
 from datetime import datetime
 
+# Base URL of the PetCare API server. Change if deploying elsewhere.
 BASE_URL = "http://localhost:5002"
 
+# Six scenarios covering emergency, routine, toxin, ambiguous, French, wellness. Gold labels for M2/M4 scoring.
 TEST_CASES = [
     {
         "id": 1,
@@ -71,6 +75,10 @@ TEST_CASES = [
 
 
 def run_scenario(tc):
+    """
+    Run a single test scenario: start session, send messages in order, fetch summary.
+    Returns dict with gold vs agent tier, red-flag match, fields_pct, elapsed_ms. (Syed Ali Turab, Mar 4, 2026)
+    """
     lang = tc.get("language", "en")
     try:
         r = requests.post(f"{BASE_URL}/api/session/start", json={"language": lang}, timeout=10)
@@ -99,6 +107,7 @@ def run_scenario(tc):
 
     elapsed_ms = int(time.time() * 1000 - start_ms)
 
+    # Get evaluation_metrics from summary for M2 (tier) and M4 (red flag). (Syed Ali Turab, Mar 4, 2026)
     try:
         r = requests.get(f"{BASE_URL}/api/session/{session_id}/summary", timeout=10)
         summary = r.json()
@@ -114,6 +123,7 @@ def run_scenario(tc):
     tier_match = (agent_tier in gold) if isinstance(gold, list) else (agent_tier == gold)
     rf_ok      = (red_flag == tc["gold_red_flag"])
 
+    # Return result row for summary table and JSON output.
     return {
         "id": tc["id"],
         "name": tc["name"],
@@ -130,6 +140,7 @@ def run_scenario(tc):
 
 
 def main():
+    """Print header, run all scenarios, print M2/M4 summary and save evaluation_results.json. (Syed Ali Turab, Mar 4, 2026)"""
     print(f"\nPetCare Evaluation — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"Server: {BASE_URL}\n")
 

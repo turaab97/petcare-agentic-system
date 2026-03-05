@@ -3,6 +3,7 @@ Sub-Agent G: Guidance & Summary Agent
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
+Code updated: Syed Ali Turab, March 4, 2026 — LLM-generated owner guidance; dermatological watch_for wording.
 
 Generates two outputs:
   1. Owner-facing "do/don't while waiting" guidance (safe, non-diagnostic)
@@ -35,6 +36,7 @@ import os
 import json
 import openai
 
+# LLM for owner-facing do/dont/watch_for; fallback to templates on error. (Syed Ali Turab, Mar 4, 2026)
 logger = logging.getLogger('petcare.agents.guidance_summary')
 
 # ---------------------------------------------------------------------------
@@ -134,7 +136,7 @@ AREA_SPECIFIC_GUIDANCE = {
         ],
         'watch_for': [
             'Rapid spreading of the affected area',
-            'Swelling, warmth, or discharge from the affected area'
+            'Swelling, warmth, or discharge from the affected area'  # Observable only; no condition name (Syed Ali Turab, Mar 4, 2026)
         ]
     }
 }
@@ -193,6 +195,8 @@ class GuidanceSummaryAgent:
         )
         area_guidance = AREA_SPECIFIC_GUIDANCE.get(symptom_area, {})
 
+        # ----- LLM-generated owner guidance (Syed Ali Turab, March 4, 2026) -----
+        # Produces do/dont/watch_for in session language; no diagnosis or condition names in watch_for.
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         lang_code = session.get('language', 'en')
         lang_names = {
@@ -227,6 +231,7 @@ Respond with exactly:
                   f"Symptom area: {symptom_area}\nChief complaint: {chief_complaint}")
 
         try:
+            # Single LLM call for do/dont/watch_for; fallback to area templates on error.
             g_resp = client.chat.completions.create(
                 model='gpt-4o-mini',
                 max_tokens=400,
@@ -244,6 +249,7 @@ Respond with exactly:
                 'watch_for': g_parsed.get('watch_for', GENERAL_GUIDANCE['watch_for'])
             }
         except Exception as e:
+            # Use static area-specific templates if LLM fails. (Syed Ali Turab, Mar 4, 2026)
             logger.error(f'Guidance LLM error, using templates: {e}')
             area_guidance = AREA_SPECIFIC_GUIDANCE.get(symptom_area, {})
             guidance = {

@@ -3,6 +3,7 @@
  *
  * Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
  * Date:   March 1, 2026
+ * Code updated: Syed Ali Turab, March 4, 2026 — Emergency banner, clinic summary panel, fetch on complete/emergency.
  *
  * Handles the chat interface, session management, voice interaction,
  * and multilingual support for the PetCare Triage & Smart Booking Agent.
@@ -423,7 +424,8 @@ async function sendMessage(source = 'text') {
         addMessage(data.message, 'assistant', isEmergency);
         speakText(data.message);
 
-        // Emergency banner — shown once at top of chat
+        // ----- Emergency banner (Syed Ali Turab, March 4, 2026) -----
+        // Shown once at top of chat when response is emergency; prompts owner to seek emergency care immediately.
         if (isEmergency) {
             if (!document.getElementById('emergency-banner')) {
                 const banner = document.createElement('div');
@@ -434,7 +436,8 @@ async function sendMessage(source = 'text') {
             }
         }
 
-        // Fetch and display clinic summary panel when pipeline completes
+        // ----- Clinic summary panel (Syed Ali Turab, March 4, 2026) -----
+        // When pipeline reaches complete or emergency, fetch /api/session/<id>/summary and render staff-view panel.
         if (data.state === 'complete' || data.state === 'emergency') {
             try {
                 const sumRes = await fetch(`/api/session/${sessionId}/summary`);
@@ -690,6 +693,12 @@ function updateVoiceButton(recording) {
     }
 }
 
+/**
+ * Renders the clinic-facing summary panel (staff view only).
+ * Shows pet, urgency tier, rationale, factors, routing, slots, fields captured; includes "Copy full JSON" button.
+ * Added March 4, 2026 — Syed Ali Turab.
+ * @param {Object} sumData - Response from GET /api/session/<id>/summary
+ */
 function _showClinicPanel(sumData) {
     const existing = document.getElementById('clinic-panel');
     if (existing) existing.remove();

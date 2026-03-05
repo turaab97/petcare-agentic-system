@@ -3,6 +3,7 @@ PetCare Triage & Smart Booking Agent -- Orchestrator
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
+Code updated: Syed Ali Turab, March 4, 2026 — owner message no longer includes triage rationale (clinic-only).
 
 Central coordinator for the 7 sub-agent pipeline:
   A. Intake → B. Safety Gate → C. Confidence Gate →
@@ -276,7 +277,8 @@ class Orchestrator:
         # ------------------------------------------------------------------
         self.session['state'] = 'complete'
 
-        # Build owner-facing message from triage + scheduling + guidance
+        # Build owner-facing message from triage + scheduling + guidance.
+        # Rationale is for clinic JSON only; not shown to owner. (Syed Ali Turab, Mar 4, 2026)
         urgency = triage_result['output'].get('urgency_tier', 'Routine')
         rationale = triage_result['output'].get('rationale', '')
         guidance = guidance_result['output'].get('owner_guidance', {})

@@ -3,6 +3,7 @@ Sub-Agent A: Intake Agent
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
+Code updated: Syed Ali Turab, March 4, 2026 — LLM-powered intake with diagnosis guardrails.
 
 Collects pet profile, chief complaint, and symptom details through
 adaptive, multi-turn follow-up questions tailored to species and symptom area.
@@ -28,6 +29,11 @@ import json
 import openai
 
 logger = logging.getLogger('petcare.agents.intake')
+
+# ---------------------------------------------------------------------------
+# LLM intake: os for env (OPENAI_API_KEY), json for parsing LLM response,
+# openai for chat completions. Updated March 4, 2026 — Syed Ali Turab.
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Field Definitions
@@ -122,6 +128,7 @@ class IntakeAgent:
         self.agent_name = 'intake'
 
     def process(self, session: dict, user_message: str) -> dict:
+        # LLM-powered structured extraction. Uses gpt-4o-mini; response must be valid JSON. (Syed Ali Turab, Mar 4, 2026)
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         lang_code = session.get('language', 'en')
         lang_names = {
@@ -130,6 +137,8 @@ class IntakeAgent:
         }
         lang_name = lang_names.get(lang_code, 'English')
 
+        # System prompt enforces: collect facts only, never name conditions or prescribe.
+        # intake_complete true only when both species and chief_complaint are present.
         system_prompt = f"""You are a veterinary intake assistant. Your ONLY job is to collect symptom information from a pet owner through structured questions. You are NOT a veterinarian.
 
 HARD RULES — never violate under any circumstances:
@@ -158,6 +167,7 @@ Rules for intake_complete:
 
 For the area field use one of: gastrointestinal, respiratory, dermatological, injury, urinary, neurological, behavioral — or leave empty if unclear."""
 
+        # Build conversation history for context (user + assistant turns only).
         history = []
         for msg in session.get('messages', []):
             if msg.get('role') in ('user', 'assistant'):
@@ -165,6 +175,7 @@ For the area field use one of: gastrointestinal, respiratory, dermatological, in
         history.append({'role': 'user', 'content': user_message})
 
         try:
+            # Call OpenAI; strip markdown fences if present, then parse JSON.
             resp = client.chat.completions.create(
                 model='gpt-4o-mini',
                 max_tokens=600,
@@ -174,6 +185,7 @@ For the area field use one of: gastrointestinal, respiratory, dermatological, in
             raw = resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
             parsed = json.loads(raw)
 
+            # Extract fields from LLM response; update session for downstream agents and summary.
             pet_profile = parsed.get('pet_profile', {})
             symptom_details = parsed.get('symptom_details', {})
             chief_complaint = parsed.get('chief_complaint', '')
@@ -188,6 +200,7 @@ For the area field use one of: gastrointestinal, respiratory, dermatological, in
                 if v:
                     session.setdefault('symptoms', {})[k] = v
 
+            # If LLM did not set follow_up_questions but intake not complete, add default by missing field.
             if not intake_complete and not follow_up_questions:
                 if not session.get('pet_profile', {}).get('species'):
                     follow_up_questions = ['What type of pet do you have? (dog, cat, or other)']
@@ -210,6 +223,7 @@ For the area field use one of: gastrointestinal, respiratory, dermatological, in
             }
 
         except Exception as e:
+            # Fallback: use session state and user_message; do not block pipeline. (Syed Ali Turab, Mar 4, 2026)
             logger.error(f'Intake LLM error: {e}')
             species = session.get('pet_profile', {}).get('species', '')
             complaint = session.get('symptoms', {}).get('chief_complaint', '')

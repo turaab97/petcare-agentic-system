@@ -3,6 +3,7 @@ PetCare Triage & Smart Booking Agent -- API Server
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
+Code updated: Syed Ali Turab, March 4, 2026 — Orchestrator wiring, n8n webhook (non-blocking), requests+threading.
 
 Flask-based API server that serves the frontend and handles
 intake requests through the orchestrator agent pipeline.
@@ -35,8 +36,8 @@ import tempfile
 from datetime import datetime
 
 from flask import Flask, request, jsonify, send_from_directory, send_file
-import requests as http_requests
-import threading
+import requests as http_requests  # For n8n webhook POST (Syed Ali Turab, Mar 4, 2026)
+import threading                  # Daemon thread so webhook does not block response
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
@@ -178,6 +179,7 @@ def health():
 
 # ===========================================================================
 # Webhook (n8n) — non-blocking after intake complete
+# Added March 4, 2026 — Syed Ali Turab. Fires when state is complete or emergency.
 # ===========================================================================
 
 def _fire_webhook(session: dict, pipeline_response: dict):
@@ -196,12 +198,14 @@ def _fire_webhook(session: dict, pipeline_response: dict):
       clinic_summary — full structured JSON (same as /api/session/<id>/summary)
       metadata     — agents_executed, processing_time_ms, language
     """
+    # Skip if N8N_WEBHOOK_URL not set (e.g. local dev). No-op is safe.
     webhook_url = os.getenv('N8N_WEBHOOK_URL', '').strip()
     if not webhook_url:
         logger.debug('N8N_WEBHOOK_URL not set — skipping webhook')
         return
 
     out = session.get('agent_outputs', {})
+    # event_type drives downstream n8n routing (e.g. emergency_alert vs intake_complete).
     event_type = 'emergency_alert' if pipeline_response.get('emergency') else 'intake_complete'
 
     payload = {
@@ -226,6 +230,7 @@ def _fire_webhook(session: dict, pipeline_response: dict):
         }
     }
 
+    # Run POST in a daemon thread so the HTTP response is not delayed. (Syed Ali Turab, Mar 4, 2026)
     def _post():
         try:
             r = http_requests.post(webhook_url, json=payload, timeout=8)
@@ -329,6 +334,8 @@ def handle_message(session_id):
     if not session.get('first_message_at'):
         session['first_message_at'] = now_iso
 
+    # ----- Run full 7-agent pipeline (Syed Ali Turab, March 4, 2026) -----
+    # Orchestrator mutates session (agent_outputs, state). Response includes message, state, emergency, metadata.
     from orchestrator import Orchestrator
     orch = Orchestrator(session=session)
     response = orch.process(user_message)
@@ -341,7 +348,7 @@ def handle_message(session_id):
         'language': lang_code
     })
 
-    # Fire webhook to n8n after pipeline completes (non-blocking)
+    # Fire webhook to n8n after pipeline completes (non-blocking). Only when flow reached end or emergency.
     if response.get('state') in ('complete', 'emergency'):
         _fire_webhook(session, response)
 

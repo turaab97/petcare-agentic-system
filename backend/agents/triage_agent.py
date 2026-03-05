@@ -3,6 +3,7 @@ Sub-Agent D: Triage Agent
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
+Code updated: Syed Ali Turab, March 4, 2026 — LLM triage with rule-based fallback.
 
 Classifies urgency into four tiers based on validated symptom data,
 with evidence-based rationale and confidence scoring.
@@ -34,6 +35,7 @@ import os
 import json
 import openai
 
+# os/json/openai for LLM triage; fallback to _rule_based_triage on error. (Syed Ali Turab, Mar 4, 2026)
 logger = logging.getLogger('petcare.agents.triage')
 
 # ---------------------------------------------------------------------------
@@ -82,6 +84,7 @@ class TriageAgent:
         self.agent_name = 'triage'
 
     def process(self, intake_data: dict, safety_result: dict) -> dict:
+        # LLM triage: classify urgency from species, complaint, timeline, eating, energy. No diagnosis names. (Syed Ali Turab, Mar 4, 2026)
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         species = (intake_data.get('species') or
                    intake_data.get('pet_profile', {}).get('species', 'unknown'))
@@ -121,6 +124,7 @@ Respond with exactly:
                     f"Timeline: {timeline}\nEating/drinking: {eating}\nEnergy level: {energy}")
 
         try:
+            # Single LLM call; parse JSON and validate tier. (Syed Ali Turab, Mar 4, 2026)
             resp = client.chat.completions.create(
                 model='gpt-4o-mini',
                 max_tokens=300,
@@ -154,6 +158,7 @@ Respond with exactly:
             fallback.setdefault('warnings', []).append(f'Fell back to rule-based triage: {str(e)}')
             return fallback
 
+    # Rule-based fallback when LLM fails. Uses signal counts from intake text. (Syed Ali Turab, Mar 4, 2026)
     def _rule_based_triage(self, intake_data: dict) -> dict:
         """
         Classify urgency tier based on intake data and safety check.
