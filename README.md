@@ -22,6 +22,11 @@ PetCare Agentic System is an AI receptionist framework built to reduce call over
 - Generating clinic-ready structured summaries (JSON)
 - Providing conservative waiting guidance to pet owners
 - Triggering post-intake automations via webhook (email, Slack, etc.)
+- **Finding nearby veterinary clinics** via Google Maps integration
+- **Exporting triage summaries as PDF** for sharing with your vet
+- **Analyzing symptom photos** via OpenAI Vision API
+- **Remembering pet profiles** across sessions (localStorage)
+- **Tracking symptom history** for returning users
 
 The system is designed with **layered responsibility separation**, **safety constraints**, and **extensibility** in mind.
 
@@ -129,6 +134,12 @@ graph TD
 
     FLASK -->|Dockerfile| RENDER["Render — Cloud Deployment"]
 
+    FLASK --> GMAPS["Google Places API — Nearby Vets"]
+    FLASK --> VISION["OpenAI Vision — Photo Analysis"]
+    FLASK --> PDF["PDF Export — fpdf2"]
+    BROWSER --> GEO["Browser Geolocation"]
+    BROWSER --> LS["localStorage — Pet Profile · History"]
+
     style A fill:#dc2626,color:#fff
     style D fill:#dc2626,color:#fff
     style GA fill:#dc2626,color:#fff
@@ -138,9 +149,14 @@ graph TD
     style FF fill:#16a34a,color:#fff
     style WH fill:#2563eb,color:#fff
     style RENDER fill:#7c3aed,color:#fff
+    style GMAPS fill:#ea4335,color:#fff
+    style VISION fill:#dc2626,color:#fff
+    style PDF fill:#64748b,color:#fff
+    style GEO fill:#16a34a,color:#fff
+    style LS fill:#16a34a,color:#fff
 ```
 
-**Color key:** 🔴 Red = LLM-powered agent (API call) · 🟢 Green = Rule-based agent (zero cost) · 🔵 Blue = Webhook output · 🟣 Purple = Cloud deployment
+**Color key:** 🔴 Red = LLM/API-powered · 🟢 Green = Client-side (free) · 🔵 Blue = Webhook output · 🟣 Purple = Cloud deployment
 
 ---
 
@@ -320,6 +336,10 @@ The system supports **7 languages** with full UI translation, RTL support, and m
 
 | **Voice STT** | OpenAI Whisper | $0.006/min |
 | **Voice TTS** | OpenAI TTS (tts-1) | $15/1M chars |
+| **Photo Analysis** | OpenAI Vision (GPT-4o-mini) | ~$0.002/photo |
+| **Nearby Vets** | Google Places API | Free tier (up to $200/mo credit) |
+| **PDF Export** | fpdf2 (server-side) | Free |
+| **Pet Profile & History** | Browser localStorage | Free |
 
 | **Webhook Automation** | Configurable webhook POST (Slack, email, etc.) | Free |
 | **Containerization** | Docker + docker-compose | Free |
@@ -359,7 +379,7 @@ The following were consulted for domain context and workflow design only. They a
 
 ## 🧪 MVP Demo Flow
 
-1. Owner describes symptoms via chat (text or voice, any of 7 languages)
+1. Owner describes symptoms via chat (text, voice, or photo — any of 7 languages)
 2. **Intake Agent** asks structured follow-up questions
 3. **Safety Gate** checks for emergency red flags
 4. **Confidence Gate** verifies data completeness
@@ -367,7 +387,8 @@ The following were consulted for domain context and workflow design only. They a
 6. **Routing Agent** selects appointment type + provider pool
 7. **Scheduling Agent** proposes available slots
 8. **Guidance Agent** generates owner do/don't guidance + clinic summary
-9. **Webhook** fires post-intake payload to configurable endpoint (Slack, email, etc.)
+9. Owner can **book an appointment**, **find nearby vets**, **download PDF summary**, or **start over**
+10. **Webhook** fires post-intake payload to configurable endpoint (Slack, email, etc.)
 
 ---
 
@@ -382,7 +403,13 @@ The following were consulted for domain context and workflow design only. They a
 | Agent implementations (A–G) | ✅ Implemented & tested |
 | Orchestrator | ✅ Implemented & tested |
 | Flask API server | ✅ Running (port 5002) |
-| Frontend (chat + voice + multilingual) | ✅ Functional |
+| Frontend (chat + voice + multilingual + photo) | ✅ Functional |
+| Nearby vet finder (Google Places API) | ✅ Implemented |
+| PDF triage summary export | ✅ Implemented |
+| Photo symptom analysis (OpenAI Vision) | ✅ Implemented |
+| Pet profile persistence (localStorage) | ✅ Implemented |
+| Symptom history tracker (localStorage) | ✅ Implemented |
+| Post-triage appointment booking flow | ✅ Implemented |
 | Docker / docker-compose | ✅ Written |
 | Webhook automation (optional) | ✅ Implemented; fires only if `N8N_WEBHOOK_URL` set |
 | End-to-end integration testing | ✅ Passing (evaluate.py — 6 scenarios) |
@@ -421,7 +448,8 @@ Full detail: [NEXT_STEPS.md](NEXT_STEPS.md).
 | **Phase 3** | Docker containerization + Render deployment | ✅ Complete |
 | **Phase 4** | Webhook automation (optional; actions layer) | ✅ Implemented; optional for POC |
 | **Phase 5** | Evaluation & testing | ✅ Complete (100% M2, 100% M4) |
-| **Phase 6** | Report, video & polish | 🔄 In progress |
+| **Phase 6** | Enhanced UX: nearby vets, PDF export, photo analysis, pet profiles, symptom history | ✅ Complete |
+| **Phase 7** | Report, video & polish | 🔄 In progress |
 
 See [PROJECT_PLAN.md](PROJECT_PLAN.md) for full sprint-by-sprint plan with risk register.
 
@@ -484,7 +512,8 @@ python api_server.py
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o-mini, Whisper, TTS |
+| `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o-mini, Whisper, TTS, Vision |
+| `GOOGLE_MAPS_API_KEY` | No | Google Maps API key for nearby vet finder (optional) |
 | `DEFAULT_LLM_PROVIDER` | No | `openai` (default) |
 | `DEFAULT_LLM_MODEL` | No | Model name (default: `gpt-4o-mini`) |
 | `PORT` | No | Server port (default: `5002`) |
@@ -572,8 +601,10 @@ The system is built to be:
 
 ## 🔮 Future Extensions
 
+- Clinic verification/override step before owner sees final triage
+- Real clinic booking API integration (Vet360, PetDesk, etc.)
 - Insurance pre-authorization agent
-- Follow-up care agent
+- Follow-up care agent with scheduled check-ins
 - Vaccination reminder automation
 - Telemedicine integration
 - Analytics dashboard for clinic operations

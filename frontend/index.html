@@ -46,13 +46,29 @@
             <!-- Input area: text input + voice button + send button -->
             <div class="chat-input-area">
                 <div class="input-wrapper">
-                    <!-- Voice input button (Tier 1: browser STT or Tier 2: Whisper) -->
+                    <!-- Voice input button -->
                     <button
                         id="voice-btn"
                         class="voice-btn hidden"
                         onclick="toggleVoice()"
                         title="Start voice input"
                     >🎤</button>
+
+                    <!-- Photo upload button -->
+                    <button
+                        id="photo-btn"
+                        class="photo-btn"
+                        onclick="document.getElementById('photo-input').click()"
+                        title="Upload a photo of symptoms"
+                    >📷</button>
+                    <input
+                        type="file"
+                        id="photo-input"
+                        accept="image/*"
+                        capture="environment"
+                        style="display:none"
+                        onchange="handlePhotoUpload(this)"
+                    >
 
                     <!-- Text input field -->
                     <textarea
@@ -65,7 +81,7 @@
                     <!-- Send button -->
                     <button id="send-btn" onclick="sendMessage()">Send</button>
 
-                    <!-- TTS toggle button (speaker on/off) -->
+                    <!-- TTS toggle button -->
                     <button
                         id="tts-btn"
                         class="tts-btn"

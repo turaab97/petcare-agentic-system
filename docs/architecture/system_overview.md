@@ -158,12 +158,24 @@ Key differentiators from a generic chatbot:
 - **Explicit autonomy boundaries** — the agent never diagnoses, prescribes, or overrides clinic rules
 - **Auditable decision chain** — every triage decision traces through the full agent pipeline with evidence
 
+## Enhanced Features (v1.1-poc)
+
+In addition to the core 7-agent pipeline, the system includes:
+
+| Feature | Technology | Description |
+|---------|-----------|-------------|
+| **Nearby Vet Finder** | Google Places API + browser geolocation | Finds real veterinary clinics near the user with ratings, phone, distance, and directions |
+| **PDF Triage Export** | fpdf2 (server-side) | Downloadable summary with pet info, symptoms, triage result, appointments, and guidance |
+| **Photo Analysis** | OpenAI Vision (GPT-4o-mini) | Upload a photo of symptoms for AI visual observation (never diagnoses) |
+| **Pet Profile Persistence** | Browser localStorage | Remembers species, name, breed, age across sessions for returning users |
+| **Symptom History** | Browser localStorage | Tracks past visits with date, complaint, and urgency for recurring symptom awareness |
+| **Appointment Booking** | Orchestrator post-completion flow | Users can confirm an appointment by name or position after triage |
+
 ## Non-Goals (POC Phase)
 
 - Providing medical diagnoses or prescriptions
 - Integrating with real EMR/CRM systems
 - Multi-clinic deployment
-- User accounts or persistent profiles
 - Payment processing
 
 ## Success Criteria

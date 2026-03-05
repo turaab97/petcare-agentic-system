@@ -366,6 +366,259 @@ button:disabled {
 }
 
 /* =========================================================================
+   Photo Upload Button
+   ========================================================================= */
+
+.photo-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 1.25rem;
+    line-height: 44px;
+    text-align: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.photo-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+}
+
+.photo-preview {
+    max-width: 200px;
+    max-height: 150px;
+    border-radius: 8px;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.photo-message {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+/* =========================================================================
+   Action Buttons (post-triage)
+   ========================================================================= */
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 8px 0;
+    animation: fadeIn 0.3s ease;
+}
+
+.action-btn {
+    padding: 10px 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.action-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+}
+
+.action-btn-sm {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 16px;
+    border: 1px solid var(--primary);
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.action-btn-sm:hover {
+    background: var(--primary-dark);
+}
+
+.action-btn-sm.secondary {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
+.action-btn-sm.secondary:hover {
+    background: var(--bg);
+    color: var(--text);
+}
+
+/* =========================================================================
+   Vet Finder Results
+   ========================================================================= */
+
+.vet-results {
+    max-width: 95% !important;
+}
+
+.vet-results-header {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.vet-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.vet-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg);
+    transition: border-color 0.2s;
+}
+
+.vet-card:hover {
+    border-color: var(--primary);
+}
+
+.vet-name {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.vet-address {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.vet-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 0.8125rem;
+    margin-bottom: 8px;
+}
+
+.vet-distance {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.vet-rating {
+    color: var(--text-muted);
+}
+
+.vet-status.open { color: var(--success); }
+.vet-status.closed { color: var(--danger); }
+
+.vet-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.vet-phone, .vet-directions {
+    font-size: 0.8125rem;
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.vet-phone:hover, .vet-directions:hover {
+    text-decoration: underline;
+}
+
+/* =========================================================================
+   Pet Profile Prompt
+   ========================================================================= */
+
+.profile-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.profile-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* =========================================================================
+   Symptom History
+   ========================================================================= */
+
+.symptom-history {
+    max-width: 95% !important;
+}
+
+.history-header {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.history-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.history-entry {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 0.8125rem;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.history-entry:last-child {
+    border-bottom: none;
+}
+
+.history-date {
+    color: var(--text-muted);
+    min-width: 50px;
+}
+
+.history-pet {
+    font-weight: 500;
+    min-width: 60px;
+}
+
+.history-complaint {
+    flex: 1;
+    color: var(--text);
+}
+
+.history-urgency {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+/* =========================================================================
    Responsive
    ========================================================================= */
 

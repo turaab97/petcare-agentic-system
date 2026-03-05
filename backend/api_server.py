@@ -399,6 +399,384 @@ def get_summary(session_id):
 
 
 # ===========================================================================
+# Routes: Nearby Vet Finder (Google Places API)
+# ===========================================================================
+
+@app.route('/api/nearby-vets', methods=['POST'])
+def nearby_vets():
+    """
+    Find nearby veterinary clinics using Google Places API.
+
+    Request Body:
+        { "lat": 43.65, "lng": -79.38, "radius_km": 5 }
+
+    Returns:
+        JSON list of nearby vet clinics with name, address, rating,
+        distance, phone, and opening hours.
+    """
+    api_key = os.getenv('GOOGLE_MAPS_API_KEY')
+    if not api_key:
+        return jsonify({
+            'error': 'Nearby vet search requires GOOGLE_MAPS_API_KEY'
+        }), 503
+
+    data = request.json or {}
+    lat = data.get('lat')
+    lng = data.get('lng')
+    radius_km = data.get('radius_km', 5)
+
+    if lat is None or lng is None:
+        return jsonify({'error': 'lat and lng are required'}), 400
+
+    radius_m = int(radius_km * 1000)
+
+    try:
+        import math
+
+        search_url = (
+            f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+            f"?location={lat},{lng}&radius={radius_m}"
+            f"&type=veterinary_care&key={api_key}"
+        )
+        search_resp = http_requests.get(search_url, timeout=10)
+        search_data = search_resp.json()
+
+        if search_data.get('status') not in ('OK', 'ZERO_RESULTS'):
+            logger.error(f"Places API error: {search_data.get('status')}")
+            return jsonify({
+                'error': f"Google Places API: {search_data.get('status')}"
+            }), 502
+
+        results = []
+        for place in search_data.get('results', [])[:8]:
+            plat = place.get('geometry', {}).get('location', {}).get('lat', 0)
+            plng = place.get('geometry', {}).get('location', {}).get('lng', 0)
+
+            d_lat = math.radians(plat - lat)
+            d_lng = math.radians(plng - lng)
+            a = (math.sin(d_lat / 2) ** 2 +
+                 math.cos(math.radians(lat)) *
+                 math.cos(math.radians(plat)) *
+                 math.sin(d_lng / 2) ** 2)
+            dist_km = 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+            entry = {
+                'name': place.get('name', ''),
+                'address': place.get('vicinity', ''),
+                'rating': place.get('rating'),
+                'total_ratings': place.get('user_ratings_total', 0),
+                'distance_km': round(dist_km, 1),
+                'open_now': place.get('opening_hours', {}).get('open_now'),
+                'place_id': place.get('place_id', ''),
+            }
+
+            # Fetch phone number from Place Details
+            pid = place.get('place_id')
+            if pid:
+                detail_url = (
+                    f"https://maps.googleapis.com/maps/api/place/details/json"
+                    f"?place_id={pid}&fields=formatted_phone_number,url"
+                    f"&key={api_key}"
+                )
+                try:
+                    det = http_requests.get(detail_url, timeout=5).json()
+                    det_result = det.get('result', {})
+                    entry['phone'] = det_result.get('formatted_phone_number', '')
+                    entry['maps_url'] = det_result.get('url', '')
+                except Exception:
+                    pass
+
+            results.append(entry)
+
+        results.sort(key=lambda x: x['distance_km'])
+
+        logger.info(f"Nearby vets: found {len(results)} within {radius_km}km")
+        return jsonify({'vets': results, 'count': len(results)})
+
+    except Exception as e:
+        logger.error(f"Nearby vet search failed: {e}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+
+
+# ===========================================================================
+# Routes: Export Triage Summary as PDF
+# ===========================================================================
+
+@app.route('/api/session/<session_id>/export', methods=['GET'])
+def export_summary(session_id):
+    """
+    Export the triage summary as a downloadable PDF.
+
+    Query Params:
+        format: 'pdf' (default)
+
+    Returns:
+        PDF file download.
+    """
+    if session_id not in sessions:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session = sessions[session_id]
+    pet = session.get('pet_profile', {})
+    symptoms = session.get('symptoms', {})
+    agent_out = session.get('agent_outputs', {})
+
+    triage_out = agent_out.get('triage', {}).get('output', {})
+    routing_out = agent_out.get('routing', {}).get('output', {})
+    sched_out = agent_out.get('scheduling', {}).get('output', {})
+    guidance_out = agent_out.get('guidance_summary', {}).get('output', {})
+    owner_guidance = guidance_out.get('owner_guidance', {})
+
+    try:
+        from fpdf import FPDF
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=20)
+
+        # Title
+        pdf.set_font('Helvetica', 'B', 18)
+        pdf.cell(0, 12, 'PetCare Triage Summary', new_x='LMARGIN', new_y='NEXT', align='C')
+        pdf.set_font('Helvetica', '', 10)
+        pdf.set_text_color(120, 120, 120)
+        pdf.cell(0, 6, f'Generated: {datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")}',
+                 new_x='LMARGIN', new_y='NEXT', align='C')
+        pdf.cell(0, 6, f'Session: {session_id}', new_x='LMARGIN', new_y='NEXT', align='C')
+        pdf.ln(8)
+        pdf.set_text_color(0, 0, 0)
+
+        # Pet Information
+        pdf.set_font('Helvetica', 'B', 13)
+        pdf.cell(0, 8, 'Pet Information', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_draw_color(37, 99, 235)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(4)
+        pdf.set_font('Helvetica', '', 11)
+        _pdf_row(pdf, 'Species', pet.get('species', 'Not specified').title())
+        if pet.get('pet_name'):
+            _pdf_row(pdf, 'Name', pet['pet_name'])
+        if pet.get('breed'):
+            _pdf_row(pdf, 'Breed', pet['breed'])
+        if pet.get('age'):
+            _pdf_row(pdf, 'Age', pet['age'])
+        pdf.ln(4)
+
+        # Symptoms
+        pdf.set_font('Helvetica', 'B', 13)
+        pdf.cell(0, 8, 'Presenting Symptoms', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_draw_color(37, 99, 235)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(4)
+        pdf.set_font('Helvetica', '', 11)
+        _pdf_row(pdf, 'Chief Complaint', symptoms.get('chief_complaint', 'Not specified'))
+        if symptoms.get('timeline'):
+            _pdf_row(pdf, 'Duration', symptoms['timeline'])
+        if symptoms.get('eating_drinking'):
+            _pdf_row(pdf, 'Eating/Drinking', symptoms['eating_drinking'])
+        if symptoms.get('energy_level'):
+            _pdf_row(pdf, 'Energy Level', symptoms['energy_level'])
+        pdf.ln(4)
+
+        # Triage Result
+        pdf.set_font('Helvetica', 'B', 13)
+        pdf.cell(0, 8, 'Triage Assessment', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_draw_color(37, 99, 235)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(4)
+        pdf.set_font('Helvetica', '', 11)
+        urgency = triage_out.get('urgency_tier', 'Not assessed')
+        _pdf_row(pdf, 'Urgency Level', urgency)
+        if triage_out.get('rationale'):
+            _pdf_row(pdf, 'Rationale', triage_out['rationale'])
+        factors = triage_out.get('contributing_factors', [])
+        if factors:
+            _pdf_row(pdf, 'Key Factors', ', '.join(factors))
+        pdf.ln(4)
+
+        # Appointments
+        slots = sched_out.get('proposed_slots', [])
+        if slots:
+            pdf.set_font('Helvetica', 'B', 13)
+            pdf.cell(0, 8, 'Proposed Appointments', new_x='LMARGIN', new_y='NEXT')
+            pdf.set_draw_color(37, 99, 235)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(4)
+            pdf.set_font('Helvetica', '', 11)
+            for s in slots[:3]:
+                dt_str = s.get('datetime', '')
+                try:
+                    dt = datetime.fromisoformat(dt_str)
+                    friendly = dt.strftime('%A, %B %d at %I:%M %p')
+                except (ValueError, TypeError):
+                    friendly = dt_str
+                pdf.cell(0, 6, f'  - {friendly} with {s.get("provider", "TBD")}',
+                         new_x='LMARGIN', new_y='NEXT')
+            pdf.ln(4)
+
+        # Guidance
+        do_tips = owner_guidance.get('do', [])
+        watch_for = owner_guidance.get('watch_for', [])
+        if do_tips or watch_for:
+            pdf.set_font('Helvetica', 'B', 13)
+            pdf.cell(0, 8, 'Care Guidance', new_x='LMARGIN', new_y='NEXT')
+            pdf.set_draw_color(37, 99, 235)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(4)
+            pdf.set_font('Helvetica', '', 11)
+            if do_tips:
+                pdf.set_font('Helvetica', 'B', 11)
+                pdf.cell(0, 6, 'While you wait:', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_font('Helvetica', '', 11)
+                for tip in do_tips[:5]:
+                    pdf.multi_cell(0, 6, f'  - {tip}', new_x='LMARGIN', new_y='NEXT')
+                pdf.ln(2)
+            if watch_for:
+                pdf.set_font('Helvetica', 'B', 11)
+                pdf.cell(0, 6, 'Seek emergency care if you notice:', new_x='LMARGIN', new_y='NEXT')
+                pdf.set_font('Helvetica', '', 11)
+                for w in watch_for[:5]:
+                    pdf.multi_cell(0, 6, f'  - {w}', new_x='LMARGIN', new_y='NEXT')
+            pdf.ln(4)
+
+        # Disclaimer
+        pdf.ln(6)
+        pdf.set_font('Helvetica', 'I', 9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.multi_cell(0, 5,
+            'Disclaimer: This triage summary is generated by an AI system and '
+            'is not a medical diagnosis. Always consult a licensed veterinarian '
+            'for your pet\'s health concerns. This document is for informational '
+            'purposes only.')
+
+        pdf_bytes = pdf.output()
+        buf = io.BytesIO(pdf_bytes)
+        buf.seek(0)
+
+        species = pet.get('species', 'pet')
+        filename = f'petcare_triage_{species}_{session_id[:8]}.pdf'
+        return send_file(buf, mimetype='application/pdf',
+                         as_attachment=True, download_name=filename)
+
+    except ImportError:
+        return jsonify({'error': 'PDF generation requires fpdf2 package'}), 503
+    except Exception as e:
+        logger.error(f"PDF export failed: {e}")
+        return jsonify({'error': f'Export failed: {str(e)}'}), 500
+
+
+def _pdf_row(pdf, label, value):
+    """Helper: write a label-value row in the PDF."""
+    pdf.set_font('Helvetica', 'B', 11)
+    pdf.cell(55, 6, f'{label}:', new_x='END')
+    pdf.set_font('Helvetica', '', 11)
+    pdf.multi_cell(0, 6, str(value), new_x='LMARGIN', new_y='NEXT')
+
+
+# ===========================================================================
+# Routes: Photo Upload & Visual Analysis (OpenAI Vision)
+# ===========================================================================
+
+@app.route('/api/session/<session_id>/photo', methods=['POST'])
+def analyze_photo(session_id):
+    """
+    Analyze a pet symptom photo using OpenAI Vision API.
+
+    Request:
+        multipart/form-data with 'photo' file field
+
+    Returns:
+        JSON with visual observation text (never diagnoses).
+    """
+    if session_id not in sessions:
+        return jsonify({'error': 'Session not found'}), 404
+
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'Photo analysis requires OPENAI_API_KEY'}), 503
+
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No photo file provided'}), 400
+
+    photo = request.files['photo']
+
+    try:
+        import base64
+        from openai import OpenAI
+
+        img_bytes = photo.read()
+        b64_img = base64.b64encode(img_bytes).decode('utf-8')
+        mime = photo.content_type or 'image/jpeg'
+
+        session = sessions[session_id]
+        species = session.get('pet_profile', {}).get('species', 'pet')
+        lang_code = session.get('language', 'en')
+        lang_names = {
+            'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',
+            'ar': 'Arabic', 'es': 'Spanish', 'hi': 'Hindi', 'ur': 'Urdu'
+        }
+        lang_name = lang_names.get(lang_code, 'English')
+
+        client = OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model='gpt-4o-mini',
+            max_tokens=400,
+            messages=[
+                {
+                    'role': 'system',
+                    'content': (
+                        f'You are a veterinary visual observation assistant. '
+                        f'Respond in {lang_name}.\n\n'
+                        f'RULES:\n'
+                        f'1. NEVER name a disease, condition, or diagnosis\n'
+                        f'2. NEVER suggest medications\n'
+                        f'3. ONLY describe what you visually observe (color, texture, '
+                        f'swelling, discharge, area affected)\n'
+                        f'4. Note the apparent severity: mild, moderate, or concerning\n'
+                        f'5. Suggest the owner mention this to their vet\n'
+                        f'6. Keep it to 2-3 sentences'
+                    )
+                },
+                {
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'text',
+                            'text': f'This is a photo of my {species}. '
+                                    f'What do you observe about the affected area?'
+                        },
+                        {
+                            'type': 'image_url',
+                            'image_url': {
+                                'url': f'data:{mime};base64,{b64_img}',
+                                'detail': 'low'
+                            }
+                        }
+                    ]
+                }
+            ]
+        )
+
+        observation = resp.choices[0].message.content.strip()
+
+        session.setdefault('symptoms', {})['photo_observation'] = observation
+        session['messages'].append({
+            'role': 'system',
+            'content': f'[Photo analysis] {observation}',
+            'timestamp': datetime.utcnow().isoformat()
+        })
+
+        logger.info(f"Photo analyzed for session {session_id[:8]}")
+        return jsonify({
+            'observation': observation,
+            'status': 'success'
+        })
+
+    except Exception as e:
+        logger.error(f"Photo analysis failed: {e}")
+        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+
+
+# ===========================================================================
 # Routes: Voice Endpoints
 # ===========================================================================
 

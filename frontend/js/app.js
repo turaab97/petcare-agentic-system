@@ -199,6 +199,7 @@ let voiceTier = 1;
 let speechRecognition = null;
 let ttsEnabled = true;
 let currentLang = 'en';
+let lastTriageState = null;  // tracks post-triage state for action buttons
 
 // ---------------------------------------------------------------------------
 // Initialization
@@ -239,6 +240,8 @@ async function initApp() {
 
     await detectVoiceSupport();
     await startSession();
+    _loadPetProfile();
+    _showSymptomHistory();
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +426,7 @@ async function sendMessage(source = 'text') {
 
         addMessage(data.message, 'assistant', isEmergency);
         speakText(data.message);
+        lastTriageState = data.state;
 
         // ----- Emergency banner (Syed Ali Turab, March 4, 2026) -----
         // Shown once at top of chat when response is emergency; prompts owner to seek emergency care immediately.
@@ -437,15 +441,21 @@ async function sendMessage(source = 'text') {
         }
 
         // ----- Clinic summary panel (Syed Ali Turab, March 4, 2026) -----
-        // When pipeline reaches complete or emergency, fetch /api/session/<id>/summary and render staff-view panel.
         if (data.state === 'complete' || data.state === 'emergency') {
             try {
                 const sumRes = await fetch(`/api/session/${sessionId}/summary`);
                 const sumData = await sumRes.json();
                 _showClinicPanel(sumData);
+                _savePetProfile(sumData.pet_profile);
+                _saveSymptomHistory(sumData);
             } catch (err) {
                 console.error('Could not fetch clinic summary:', err);
             }
+            _showActionButtons();
+        }
+
+        if (data.state === 'booked') {
+            _showActionButtons();
         }
 
     } catch (err) {
@@ -704,6 +714,344 @@ function updateVoiceButton(recording) {
  * Added March 4, 2026 — Syed Ali Turab.
  * @param {Object} sumData - Response from GET /api/session/<id>/summary
  */
+// ---------------------------------------------------------------------------
+// Action Buttons (post-triage)
+// ---------------------------------------------------------------------------
+
+function _showActionButtons() {
+    if (document.getElementById('action-buttons')) return;
+
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.id = 'action-buttons';
+    div.className = 'action-buttons';
+    div.innerHTML = `
+        <button onclick="findNearbyVets()" class="action-btn vet-finder-btn">
+            📍 Find Nearby Vets
+        </button>
+        <button onclick="downloadSummary()" class="action-btn export-btn">
+            📄 Download Summary
+        </button>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// Feature 1: Nearby Vet Finder
+// ---------------------------------------------------------------------------
+
+async function findNearbyVets() {
+    if (!navigator.geolocation) {
+        addMessage('Location services are not available in your browser.', 'assistant');
+        return;
+    }
+
+    addMessage('📍 Searching for nearby veterinary clinics...', 'assistant');
+    showTypingIndicator();
+
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 10000
+            });
+        });
+
+        const { latitude: lat, longitude: lng } = pos.coords;
+
+        const res = await fetch('/api/nearby-vets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lng, radius_km: 10 })
+        });
+        const data = await res.json();
+        removeTypingIndicator();
+
+        if (data.error) {
+            addMessage(`Could not find nearby vets: ${data.error}`, 'assistant');
+            return;
+        }
+
+        if (!data.vets || data.vets.length === 0) {
+            addMessage('No veterinary clinics found within 10 km. Try expanding your search area.', 'assistant');
+            return;
+        }
+
+        _renderVetResults(data.vets);
+
+    } catch (err) {
+        removeTypingIndicator();
+        if (err.code === 1) {
+            addMessage('Location access was denied. Please enable location services and try again.', 'assistant');
+        } else {
+            addMessage('Could not determine your location. Please try again.', 'assistant');
+        }
+        console.error('Geolocation error:', err);
+    }
+}
+
+function _renderVetResults(vets) {
+    const container = document.getElementById('chat-messages');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message assistant vet-results';
+
+    let html = '<div class="vet-results-header">🏥 Nearby Veterinary Clinics</div>';
+    html += '<div class="vet-cards">';
+
+    for (const vet of vets.slice(0, 5)) {
+        const stars = vet.rating ? '⭐'.repeat(Math.round(vet.rating)) : '';
+        const ratingText = vet.rating ? `${vet.rating}/5 (${vet.total_ratings} reviews)` : 'No ratings';
+        const statusClass = vet.open_now ? 'open' : 'closed';
+        const statusText = vet.open_now === true ? '🟢 Open now' : vet.open_now === false ? '🔴 Closed' : '';
+        const phone = vet.phone ? `<a href="tel:${vet.phone}" class="vet-phone">📞 ${vet.phone}</a>` : '';
+        const mapsLink = vet.maps_url
+            ? `<a href="${vet.maps_url}" target="_blank" rel="noopener" class="vet-directions">🗺️ Directions</a>`
+            : '';
+
+        html += `
+            <div class="vet-card">
+                <div class="vet-name">${vet.name}</div>
+                <div class="vet-address">${vet.address}</div>
+                <div class="vet-meta">
+                    <span class="vet-distance">${vet.distance_km} km</span>
+                    <span class="vet-rating">${stars} ${ratingText}</span>
+                    ${statusText ? `<span class="vet-status ${statusClass}">${statusText}</span>` : ''}
+                </div>
+                <div class="vet-actions">
+                    ${phone}
+                    ${mapsLink}
+                </div>
+            </div>`;
+    }
+
+    html += '</div>';
+    wrapper.innerHTML = html;
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// Feature 2: Export Triage Summary as PDF
+// ---------------------------------------------------------------------------
+
+async function downloadSummary() {
+    if (!sessionId) return;
+
+    try {
+        const res = await fetch(`/api/session/${sessionId}/export`);
+        if (!res.ok) {
+            const err = await res.json();
+            addMessage(`Could not generate PDF: ${err.error || 'Unknown error'}`, 'assistant');
+            return;
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `petcare_triage_summary.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        addMessage('📄 Your triage summary PDF has been downloaded. Share it with your veterinarian.', 'assistant');
+    } catch (err) {
+        console.error('PDF download failed:', err);
+        addMessage('Failed to download summary. Please try again.', 'assistant');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Feature 3: Photo Upload & Visual Analysis
+// ---------------------------------------------------------------------------
+
+async function handlePhotoUpload(input) {
+    const file = input.files[0];
+    if (!file || !sessionId) return;
+
+    input.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = 'message user photo-message';
+        div.innerHTML = `<img src="${e.target.result}" alt="Uploaded photo" class="photo-preview">
+                         <span>📷 Photo uploaded for analysis</span>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    };
+    reader.readAsDataURL(file);
+
+    showTypingIndicator();
+
+    try {
+        const formData = new FormData();
+        formData.append('photo', file);
+
+        const res = await fetch(`/api/session/${sessionId}/photo`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        removeTypingIndicator();
+
+        if (data.error) {
+            addMessage(`Photo analysis failed: ${data.error}`, 'assistant');
+            return;
+        }
+
+        addMessage(`📷 Visual observation: ${data.observation}`, 'assistant');
+        speakText(data.observation);
+
+    } catch (err) {
+        removeTypingIndicator();
+        addMessage('Photo analysis failed. Please try again or describe the symptoms in text.', 'assistant');
+        console.error('Photo upload error:', err);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Feature 4: Pet Profile Persistence
+// ---------------------------------------------------------------------------
+
+function _savePetProfile(profile) {
+    if (!profile || !profile.species) return;
+    try {
+        const saved = {
+            species: profile.species,
+            pet_name: profile.pet_name || '',
+            breed: profile.breed || '',
+            age: profile.age || '',
+            saved_at: new Date().toISOString()
+        };
+        localStorage.setItem('petcare_pet_profile', JSON.stringify(saved));
+    } catch (_) { /* localStorage unavailable */ }
+}
+
+function _loadPetProfile() {
+    try {
+        const raw = localStorage.getItem('petcare_pet_profile');
+        if (!raw) return;
+        const profile = JSON.parse(raw);
+        if (!profile.species) return;
+
+        const daysSince = (Date.now() - new Date(profile.saved_at).getTime()) / 86400000;
+        if (daysSince > 90) {
+            localStorage.removeItem('petcare_pet_profile');
+            return;
+        }
+
+        const name = profile.pet_name || profile.species;
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = 'message assistant pet-profile-prompt';
+        div.innerHTML = `
+            <div class="profile-prompt">
+                <span>👋 Welcome back! Last time you told us about <strong>${name}</strong> (${profile.species}).</span>
+                <div class="profile-actions">
+                    <button onclick="_useSavedProfile()" class="action-btn-sm">Use this profile</button>
+                    <button onclick="_clearSavedProfile(this.parentElement.parentElement.parentElement)" class="action-btn-sm secondary">New pet</button>
+                </div>
+            </div>`;
+        container.appendChild(div);
+    } catch (_) { /* localStorage unavailable */ }
+}
+
+function _useSavedProfile() {
+    try {
+        const raw = localStorage.getItem('petcare_pet_profile');
+        if (!raw) return;
+        const profile = JSON.parse(raw);
+
+        let msg = `I have a ${profile.species}`;
+        if (profile.pet_name) msg += ` named ${profile.pet_name}`;
+        if (profile.breed) msg += `, ${profile.breed}`;
+        if (profile.age) msg += `, ${profile.age} old`;
+
+        document.getElementById('user-input').value = msg;
+
+        const prompt = document.querySelector('.pet-profile-prompt');
+        if (prompt) prompt.remove();
+    } catch (_) {}
+}
+
+function _clearSavedProfile(el) {
+    localStorage.removeItem('petcare_pet_profile');
+    if (el) el.remove();
+}
+
+// ---------------------------------------------------------------------------
+// Feature 5: Symptom History Tracker
+// ---------------------------------------------------------------------------
+
+function _saveSymptomHistory(summaryData) {
+    try {
+        const history = JSON.parse(localStorage.getItem('petcare_symptom_history') || '[]');
+        const pet = summaryData.pet_profile || {};
+        const out = summaryData.agent_outputs || {};
+        const triage = (out.triage || {}).output || {};
+        const symptoms = summaryData.symptoms || {};
+
+        history.push({
+            date: new Date().toISOString(),
+            species: pet.species || '',
+            pet_name: pet.pet_name || '',
+            chief_complaint: symptoms.chief_complaint || '',
+            urgency: triage.urgency_tier || '',
+            session_id: sessionId
+        });
+
+        // Keep only last 20 entries
+        if (history.length > 20) history.splice(0, history.length - 20);
+        localStorage.setItem('petcare_symptom_history', JSON.stringify(history));
+    } catch (_) {}
+}
+
+function _showSymptomHistory() {
+    try {
+        const raw = localStorage.getItem('petcare_symptom_history');
+        if (!raw) return;
+        const history = JSON.parse(raw);
+        if (history.length === 0) return;
+
+        const recent = history.slice(-5).reverse();
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = 'message assistant symptom-history';
+
+        let html = '<div class="history-header">📋 Recent Visit History</div>';
+        html += '<div class="history-entries">';
+        for (const entry of recent) {
+            const date = new Date(entry.date);
+            const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const name = entry.pet_name || entry.species || 'Pet';
+            const urgencyColors = {
+                Emergency: '#dc2626', 'Same-day': '#f59e0b',
+                Soon: '#d4ac0d', Routine: '#16a34a'
+            };
+            const color = urgencyColors[entry.urgency] || '#64748b';
+            html += `
+                <div class="history-entry">
+                    <span class="history-date">${dateStr}</span>
+                    <span class="history-pet">${name}</span>
+                    <span class="history-complaint">${entry.chief_complaint}</span>
+                    <span class="history-urgency" style="color:${color}">${entry.urgency}</span>
+                </div>`;
+        }
+        html += '</div>';
+        html += '<button onclick="this.parentElement.remove()" class="action-btn-sm secondary" style="margin-top:8px">Dismiss</button>';
+        div.innerHTML = html;
+        container.appendChild(div);
+    } catch (_) {}
+}
+
+// ---------------------------------------------------------------------------
+// Clinic Summary Panel
+// ---------------------------------------------------------------------------
+
 function _showClinicPanel(sumData) {
     const existing = document.getElementById('clinic-panel');
     if (existing) existing.remove();

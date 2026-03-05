@@ -137,6 +137,14 @@ flowchart TD
 - Mock schedule → `backend/data/available_slots.json`
 - Optional: n8n webhooks for post-intake actions (email, Slack, Google Sheets)
 
+**Enhanced features (v1.1-poc):**
+
+- Google Places API → nearby vet finder (real clinics, ratings, phone, directions)
+- OpenAI Vision → photo symptom analysis (visual observation, never diagnoses)
+- fpdf2 → downloadable PDF triage summary
+- Browser localStorage → pet profile persistence and symptom history tracking
+- Post-triage appointment booking flow (confirm by name or ordinal)
+
 **Later integrations:**
 
 - Scheduling system API (clinic booking platform)
