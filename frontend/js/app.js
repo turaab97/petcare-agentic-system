@@ -977,12 +977,18 @@ async function findNearbyVets() {
     showTypingIndicator();
 
     try {
-        const pos = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                enableHighAccuracy: true,
-                timeout: 10000
-            });
-        });
+        const pos = await Promise.race([
+            new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: false,
+                    timeout: 8000,
+                    maximumAge: 300000
+                });
+            }),
+            new Promise((_, reject) =>
+                setTimeout(() => reject({ code: 3, message: 'Location request timed out' }), 12000)
+            )
+        ]);
 
         const { latitude: lat, longitude: lng } = pos.coords;
 
@@ -1018,9 +1024,11 @@ async function findNearbyVets() {
     } catch (err) {
         removeTypingIndicator();
         if (err.code === 1) {
-            addMessage('Location access was denied. Please enable location services and try again.', 'assistant');
+            addMessage('📍 Location access was denied. Please allow location access in your browser settings and try again.', 'assistant');
+        } else if (err.code === 3 || (err.message && err.message.includes('timed out'))) {
+            addMessage('📍 Location request timed out. Please check that location services are enabled in your system settings and try again.', 'assistant');
         } else {
-            addMessage('Could not determine your location. Please try again.', 'assistant');
+            addMessage('📍 Could not determine your location. Please check your browser and system location settings.', 'assistant');
         }
         console.error('Geolocation error:', err);
     }
