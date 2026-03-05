@@ -89,7 +89,7 @@ Sub-Agent C: Confidence Gate → Required fields missing OR confidence too low
 | **Data Contracts** | JSON schemas | Structured I/O between all agents |
 | **Containerization** | Docker | Single-container deployment |
 | **Deployment** | **Render (recommended)** / Railway | Free-tier cloud; Render is the smart bet for POC (auto-deploy from GitHub, HTTPS, minimal config). |
-| **Tracing (optional)** | LangSmith | LLM call observability |
+| **Tracing (post-POC)** | LangSmith or equivalent | LLM call observability (not used in POC) |
 
 ## Data Sources
 

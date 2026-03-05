@@ -218,7 +218,7 @@ Role-based access control enforces minimal privilege:
 | Agent | `clinic_rules` | `red_flags` | `available_slots` | `intake_records` | `appointments` |
 |-------|:-:|:-:|:-:|:-:|:-:|
 | **Intake (A)** | -- | -- | -- | -- | -- |
-| **Safety Gate (B)** | Read | Read | -- | -- | -- |
+| **Safety Gate (B)** | -- | Read | -- | -- | -- |
 | **Confidence Gate (C)** | -- | -- | -- | -- | -- |
 | **Triage (D)** | Read | -- | -- | -- | -- |
 | **Routing (E)** | Read | -- | -- | -- | -- |

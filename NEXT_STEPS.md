@@ -4,9 +4,9 @@
 
 **Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 5, 2026*
 
-**POC plan alignment:** Steps 1–7 are **done**. Deployment is **Render** ([DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)). Webhook/n8n is **optional** for POC.
+**POC plan alignment:** Steps 1–9 are **done**. Deployment is **Render** ([DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)). Webhook/n8n is **optional** for POC.
 
-This document is the **action plan** to go from “scaffolded, untested” to a **working, demo-ready POC**. Follow in order. Update the README “Next steps” table as you complete each item.
+This document is the **action plan** for the POC build. Steps 1–9 are **done**; the pipeline runs end-to-end with 100% M2/M4 accuracy. Remaining: report + demo video (Step 10).
 
 ---
 
@@ -71,7 +71,7 @@ The Intake agent currently always returns `intake_complete: False`, so the Orche
 
 **Option B — LLM-powered (recommended for real use):** Implement the TODO in the Intake agent:
 
-- Call OpenAI or Anthropic with a system prompt that: extracts species, chief complaint, timeline, and symptom details; never diagnoses; responds in the session language.
+- Call OpenAI with a system prompt that: extracts species, chief complaint, timeline, and symptom details; never diagnoses; responds in the session language.
 - From the LLM response, populate `pet_profile`, `chief_complaint`, `symptom_details` and set `intake_complete: True` when required fields (e.g. species + chief_complaint) are present; otherwise return `follow_up_questions`.
 - Pass `session['language']` into the prompt so the assistant and follow-up questions use the correct language.
 
@@ -79,7 +79,7 @@ The Intake agent currently always returns `intake_complete: False`, so the Orche
 
 ### Step 3: Smoke Test Locally
 
-1. Copy `.env.example` to `.env` and set `OPENAI_API_KEY` (and optionally `ANTHROPIC_API_KEY` if you use Claude).
+1. Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
 2. From repo root:  
    `cd backend && pip install -r ../requirements.txt && python api_server.py`
 3. Open `http://localhost:5002` in a browser.

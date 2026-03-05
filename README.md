@@ -484,10 +484,9 @@ python api_server.py
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes (if using OpenAI) | OpenAI API key for GPT-4.1 |
-| `ANTHROPIC_API_KEY` | Yes (if using Anthropic) | Anthropic API key for Claude |
-| `DEFAULT_LLM_PROVIDER` | No | `openai` (default) or `anthropic` |
-| `DEFAULT_LLM_MODEL` | No | Model name (default: `gpt-4.1-mini`) |
+| `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o-mini, Whisper, TTS |
+| `DEFAULT_LLM_PROVIDER` | No | `openai` (default) |
+| `DEFAULT_LLM_MODEL` | No | Model name (default: `gpt-4o-mini`) |
 | `PORT` | No | Server port (default: `5002`) |
 | `LOG_LEVEL` | No | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `N8N_WEBHOOK_URL` | No | Webhook URL for post-intake automation (optional) |

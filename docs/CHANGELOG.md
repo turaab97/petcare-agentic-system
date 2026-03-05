@@ -143,8 +143,8 @@ Created foundational docs: `README.md`, `docs/architecture.md`, `docs/agent-desi
 
 ## Handoff Notes
 
-- Active development branch: `PetCare_Syed`
-- Do NOT merge into `main` without team review
+- Active development branch: `main`
+- All work has been merged to `main`
 - The `docs/original_main/` folder preserves all main-branch docs for reference
 - Active code is in `backend/` and `frontend/` only (legacy `src/` and resume/job-related specs were removed in repo cleanup)
 - Keep this changelog updated when adding new features or docs

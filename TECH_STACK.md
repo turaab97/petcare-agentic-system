@@ -7,7 +7,7 @@
 
 ## What This Is Built On
 
-The PetCare Agent is a **monolithic Python/Flask application** that bundles the frontend, backend API, orchestrator, and all 7 sub-agents into a **single deployable unit**. It runs inside a **single Docker container** (or directly via Python) and communicates with external LLM APIs (OpenAI / Anthropic) for AI reasoning.
+The PetCare Agent is a **monolithic Python/Flask application** that bundles the frontend, backend API, orchestrator, and all 7 sub-agents into a **single deployable unit**. It runs inside a **single Docker container** (or directly via Python) and communicates with the OpenAI API for AI reasoning.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -68,13 +68,11 @@ The PetCare Agent is a **monolithic Python/Flask application** that bundles the 
         │    External LLM APIs         │
         │                              │
         │  OpenAI API                  │
-        │  ├─ GPT-4.1 / GPT-4.1-mini  │
+        │  ├─ GPT-4o-mini             │
         │  ├─ Whisper (STT)            │
         │  ├─ TTS (text-to-speech)     │
         │  └─ Realtime API (Tier 3)    │
         │                              │
-        │  Anthropic API               │
-        │  └─ Claude 3.5+             │
         └──────────────────────────────┘
 ```
 
@@ -101,13 +99,13 @@ All 7 sub-agents run **in-process** within the same Python Flask server. They ar
 2. Flask routes to handle_message()
 3. Orchestrator is instantiated with the session
 4. Orchestrator.process(message) runs:
-   ├── IntakeAgent.process()          ← LLM call (OpenAI/Anthropic)
+   ├── IntakeAgent.process()          ← LLM call (OpenAI GPT-4o-mini)
    ├── SafetyGateAgent.process()      ← Local rule-based (no API call)
    ├── ConfidenceGateAgent.process()  ← Local rule-based (no API call)
-   ├── TriageAgent.process()          ← LLM call (OpenAI/Anthropic)
+   ├── TriageAgent.process()          ← LLM call (OpenAI GPT-4o-mini)
    ├── RoutingAgent.process()         ← Local rule-based (no API call)
    ├── SchedulingAgent.process()      ← Local rule-based (no API call)
-   └── GuidanceSummaryAgent.process() ← LLM call (OpenAI/Anthropic)
+   └── GuidanceSummaryAgent.process() ← LLM call (OpenAI GPT-4o-mini)
 5. Orchestrator assembles response
 6. Flask returns JSON response
 ```
@@ -138,7 +136,7 @@ For a POC, a monolithic architecture is the right choice:
 ```
 petcare-agent:latest
 ├── Base: python:3.11-slim (Debian Bookworm, ~150MB)
-├── Python packages: flask, openai, anthropic, langchain, pydantic (~200MB)
+├── Python packages: flask, openai, pydantic, gunicorn (~200MB)
 ├── Application code: backend/ + frontend/ + docs/ + data/ (~2MB)
 ├── Total image size: ~350-400MB
 └── Exposed port: 5002
@@ -188,11 +186,9 @@ The build is **deterministic**: same code + same requirements.txt = same image e
 
 | Component | Technology | Pricing | Used By |
 |-----------|-----------|---------|---------|
-| **Primary LLM** | OpenAI GPT-4.1-mini | ~$0.40/1M input, $1.60/1M output | Intake (A), Triage (D), Guidance (G) |
-| **Upgrade LLM** | OpenAI GPT-4.1 | ~$2/1M input, $8/1M output | Complex triage cases |
-| **Alternative** | Anthropic Claude 3.5 Sonnet | ~$3/1M input, $15/1M output | Fallback; strong safety reasoning |
-| **Framework** | LangChain + LangChain-OpenAI | -- | Prompt templating, structured output |
-| **Tracing** | LangSmith (optional) | Free tier | LLM call tracing, prompt debugging |
+| **Primary LLM** | OpenAI GPT-4o-mini | ~$0.15/1M input, $0.60/1M output | Intake (A), Triage (D), Guidance (G) |
+| **Voice STT** | OpenAI Whisper | $0.006/min | Voice transcription (Tier 2) |
+| **Voice TTS** | OpenAI TTS (tts-1) | $15/1M chars | Voice synthesis (Tier 2) |
 
 ### Cost Per Intake Session (Estimated)
 
@@ -212,7 +208,7 @@ The system supports **7 languages** out of the box. The user selects their langu
 
 ### Supported Languages
 
-| Language | Code | Script | Direction | Whisper | Web Speech API | GPT-4.1 | TTS |
+| Language | Code | Script | Direction | Whisper | Web Speech API | GPT-4o-mini | TTS |
 |----------|------|--------|-----------|---------|---------------|---------|-----|
 | **English** | `en` | Latin | LTR | Yes | Yes | Yes | Yes |
 | **French** | `fr` | Latin | LTR | Yes | Yes | Yes | Yes |
@@ -260,7 +256,7 @@ Zero additional cost for multilingual support:
 | Component | Multilingual Cost | Notes |
 |-----------|------------------|-------|
 | UI translations | Free | Hardcoded in `app.js` |
-| GPT-4.1 responses | Same token cost | Multilingual is native |
+| GPT-4o-mini responses | Same token cost | Multilingual is native |
 | Whisper STT | Same per-minute cost | All languages supported |
 | OpenAI TTS | Same per-character cost | Auto-detects language |
 | Browser voice | Free | Language via BCP-47 tag |
@@ -348,76 +344,42 @@ Metrics to monitor:
 
 ---
 
-## Workflow Automation Layer (n8n)
+## Webhook Automation Layer (Optional)
 
-n8n is the **actions layer** -- it handles everything that happens *after* the agent pipeline finishes. The agent logic stays in Python; n8n handles the downstream integrations with zero coupling.
+The backend fires an optional webhook POST after the agent pipeline completes (e.g. when intake finishes or a red flag is detected). This decouples downstream actions (email, Slack, logging) from the agent logic.
 
-### What n8n Does
+### How It Works
 
 ```
 PetCare Agent completes intake
         │
-        │  POST webhook (JSON payload)
+        │  POST to N8N_WEBHOOK_URL (if configured)
         ▼
 ┌─────────────────────────────────────────────┐
-│               n8n Workflow Engine            │
+│         Any Webhook Receiver                │
+│  (n8n, Zapier, Slack, custom endpoint)      │
 │                                             │
-│  Workflow 1: Emergency Alert                │
+│  Example actions:                           │
 │  ├─ Slack → #emergency channel              │
-│  └─ Email → on-call vet                     │
-│                                             │
-│  Workflow 2: Clinic Summary Delivery        │
 │  ├─ Email → clinic inbox (formatted HTML)   │
-│  └─ Google Sheets → append intake row       │
-│                                             │
-│  Workflow 3: Appointment Confirmation       │
-│  ├─ Email → pet owner                       │
-│  └─ Google Calendar → create event (mock)   │
-│                                             │
-│  Workflow 4: Analytics Logger               │
-│  └─ Google Sheets → session metrics         │
-│     (triage tier, confidence, latency, lang) │
-│                                             │
-│  Workflow 5: Follow-Up Reminder (stretch)   │
-│  └─ Email → pet owner (24hr delayed)        │
+│  └─ Google Sheets → intake log              │
 └─────────────────────────────────────────────┘
 ```
 
-### n8n vs Alternatives
-
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| **n8n (self-hosted)** | Free, open-source, visual workflow builder, 400+ integrations, runs in Docker | Needs a second container | **Chosen** |
-| **n8n Cloud** | Same as above + no Docker needed | 300 exec/mo free tier | Good fallback |
-| **Zapier** | Easy to use | Expensive ($20/mo+), proprietary | Too expensive for POC |
-| **Custom Python code** | No dependencies | Tightly couples agent logic to email/Slack/Sheets code | Bad separation |
-| **AWS Step Functions** | Enterprise-grade | Overkill, requires AWS account | Too complex |
-
-### How It Connects
+### Implementation
 
 | Component | Detail |
 |-----------|--------|
-| **Trigger** | n8n Webhook node receives POST from Flask backend |
+| **Trigger** | Flask backend POSTs JSON after orchestrator completes |
 | **Payload** | Session JSON: pet profile, triage tier, symptoms, agent outputs, language |
-| **Transport** | HTTP (localhost in Docker network, HTTPS in cloud) |
-| **Backend change** | Add ~10 lines: `requests.post(N8N_WEBHOOK_URL, json=session_data)` after orchestrator completes |
-| **n8n runs** | As a separate Docker container (via docker-compose) or n8n Cloud |
+| **Guard** | Only fires if `N8N_WEBHOOK_URL` env var is set; otherwise silently skipped |
+| **Threading** | Non-blocking (fires in a background thread so it doesn't slow the response) |
 
-### Deployment
+### POC Status
 
-| Option | Setup | Cost |
-|--------|-------|------|
-| **docker-compose (recommended)** | `docker-compose up` runs petcare + n8n together | Free |
-| **n8n Cloud** | Sign up → paste webhook URL into `.env` | Free (300 exec/mo) |
+The webhook code is **implemented** in `api_server.py`. For the POC, it is **optional** — the app runs fully without any webhook configured. To enable it, set `N8N_WEBHOOK_URL` in `.env` to any URL (n8n, Slack incoming webhook, Zapier, custom endpoint).
 
-### n8n Credentials Needed (for workflows)
-
-| Service | What to Set Up | Free Tier |
-|---------|---------------|-----------|
-| Gmail / SMTP | Email sending (clinic summary, confirmations) | Free |
-| Slack | Incoming webhook for emergency alerts | Free |
-| Google Sheets | API key for intake logging | Free |
-| Google Calendar | API key for appointment events (mock) | Free |
+For production, this layer would be expanded to support multiple event types (emergency alert, clinic summary delivery, appointment confirmation, analytics logging).
 
 ---
 
@@ -431,14 +393,16 @@ PetCare Agent completes intake
 | **Mock Schedule** | `backend/data/available_slots.json` | Loaded at startup | Simulated appointment slots |
 | **Logging** | Python `logging` → `backend/logs/` | File + console | API requests, agent trace, errors |
 
-### External Data Sources
+### Design References (not used at runtime)
 
-| Source | URL | Used By |
-|--------|-----|---------|
-| HuggingFace Pet Health Dataset | [karenwky/pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Intake (A), Triage (D) |
-| ASPCA AnTox | [aspcapro.org/antox](https://www.aspcapro.org/antox) | Safety Gate (B) |
-| Vet-AI Symptom Checker | [vet-ai.com/symptomchecker](https://www.vet-ai.com/symptomchecker) | Triage (D), Routing (E) |
-| SAVSNET / PetBERT | [github.com/SAVSNET/PetBERT](https://github.com/SAVSNET/PetBERT) | NLP reference |
+These were consulted for domain context when curating the operational JSON files above. They are **not** loaded or called by the system.
+
+| Source | URL | How We Used It |
+|--------|-----|----------------|
+| HuggingFace Pet Health Dataset | [karenwky/pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Symptom taxonomy / category ideas |
+| ASPCA AnTox | [aspcapro.org/antox](https://www.aspcapro.org/antox) | Red-flag phrasing in `red_flags.json` |
+| Vet-AI Symptom Checker | [vet-ai.com/symptomchecker](https://www.vet-ai.com/symptomchecker) | Triage workflow design inspiration |
+| SAVSNET / PetBERT | [github.com/SAVSNET/PetBERT](https://github.com/SAVSNET/PetBERT) | NLP / coding patterns reference |
 
 ---
 
@@ -449,8 +413,8 @@ PetCare Agent completes intake
 | **Container** | Docker (single container) | Bundles Python + app + frontend |
 | **Cloud** | **Render (recommended)** / Railway (free tier) | Zero-cost POC hosting; Render is the smart bet (GitHub auto-deploy, HTTPS, minimal config). |
 | **DNS/SSL** | Provided by Render / Railway | HTTPS by default |
-| **CI/CD** | GitHub → Render auto-deploy | Push to `PetCare_Syed` branch → auto-redeploy |
-| **Version Control** | Git + GitHub | Source code on `PetCare_Syed` branch |
+| **CI/CD** | GitHub → Render auto-deploy | Push to `main` branch → auto-redeploy |
+| **Version Control** | Git + GitHub | Source code on `main` branch |
 | **Start Scripts** | `start.sh` / `start.ps1` | One-click local setup |
 | **Monitoring** | `/api/health` endpoint | Basic health check |
 
@@ -476,13 +440,9 @@ See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for step-by-step instructions.
 | `flask` | Web server, REST API, static serving | api_server.py |
 | `python-dotenv` | Load `.env` file into environment | api_server.py |
 | `pydantic` | JSON schema validation, data models | All agents |
-| `openai` | GPT-4.1, Whisper STT, TTS, Realtime API | Intake, Triage, Guidance, Voice |
-| `anthropic` | Claude API client | Configurable fallback LLM |
-| `langchain` | LLM abstraction, prompt templates | Agent prompting |
-| `langchain-openai` | LangChain ↔ OpenAI bridge | Agent prompting |
-| `langchain-anthropic` | LangChain ↔ Anthropic bridge | Agent prompting |
-| `gunicorn` | Production WSGI server | Cloud deployment |
-| `streamlit` | Quick prototyping UI (from main branch) | Optional |
+| `openai` | GPT-4o-mini, Whisper STT, TTS | Intake, Triage, Guidance, Voice |
+| `requests` | HTTP client for webhook POST | api_server.py (webhook) |
+| `gunicorn` | Production WSGI server | Cloud deployment (Render) |
 
 ---
 

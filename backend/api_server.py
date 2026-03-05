@@ -3,7 +3,7 @@ PetCare Triage & Smart Booking Agent -- API Server
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
-Code updated: Syed Ali Turab, March 4, 2026 — Orchestrator wiring, n8n webhook (non-blocking), requests+threading.
+Code updated: Syed Ali Turab, March 4, 2026 — Orchestrator wiring, optional webhook (non-blocking), requests+threading.
 
 Flask-based API server that serves the frontend and handles
 intake requests through the orchestrator agent pipeline.
@@ -36,7 +36,7 @@ import tempfile
 from datetime import datetime
 
 from flask import Flask, request, jsonify, send_from_directory, send_file
-import requests as http_requests  # For n8n webhook POST (Syed Ali Turab, Mar 4, 2026)
+import requests as http_requests  # For optional webhook POST (Syed Ali Turab, Mar 4, 2026)
 import threading                  # Daemon thread so webhook does not block response
 from dotenv import load_dotenv
 
@@ -178,13 +178,14 @@ def health():
 
 
 # ===========================================================================
-# Webhook (n8n) — non-blocking after intake complete
+# Webhook (optional) — non-blocking after intake complete
 # Added March 4, 2026 — Syed Ali Turab. Fires when state is complete or emergency.
+# Only active if N8N_WEBHOOK_URL is set (e.g. Slack, email, or any receiver).
 # ===========================================================================
 
 def _fire_webhook(session: dict, pipeline_response: dict):
     """
-    Fire a non-blocking POST to n8n (or any webhook) after intake completes.
+    Fire a non-blocking POST to a configurable webhook after intake completes.
 
     Payload shape:
       event_type   — "intake_complete" or "emergency_alert"
@@ -205,7 +206,7 @@ def _fire_webhook(session: dict, pipeline_response: dict):
         return
 
     out = session.get('agent_outputs', {})
-    # event_type drives downstream n8n routing (e.g. emergency_alert vs intake_complete).
+    # event_type drives downstream routing (e.g. emergency_alert vs intake_complete).
     event_type = 'emergency_alert' if pipeline_response.get('emergency') else 'intake_complete'
 
     payload = {
@@ -354,7 +355,7 @@ def handle_message(session_id):
         'language': lang_code
     })
 
-    # Fire webhook to n8n after pipeline completes (non-blocking). Only when flow reached end or emergency.
+    # Fire webhook after pipeline completes (non-blocking, optional). Only when flow reached end or emergency.
     if response.get('state') in ('complete', 'emergency'):
         _fire_webhook(session, response)
 

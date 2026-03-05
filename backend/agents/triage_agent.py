@@ -174,8 +174,6 @@ Respond with exactly:
             intake_data: Dict from the Intake Agent with chief_complaint,
                          symptom_details, timeline, eating_drinking,
                          energy_level.
-            safety_result: Dict from the Safety Gate Agent (used to check
-                           if any near-miss red flags were found).
 
         Returns:
             dict with standard agent output contract:
@@ -243,8 +241,7 @@ Respond with exactly:
         else:
             tier = 'Routine'
 
-        # Confidence is lower for rule-based classification
-        # (will be higher when LLM is integrated)
+        # Confidence is lower for rule-based fallback than LLM primary path
         confidence = min(0.7, 0.4 + (high_count + low_count) * 0.1)
 
         rationale = (

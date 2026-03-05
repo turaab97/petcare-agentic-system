@@ -135,7 +135,6 @@ Owner Input (symptoms, pet info)
 | **Data Contracts** | JSON schemas | Structured I/O between all agents |
 | **Containerization** | Docker | Single-container deployment |
 | **Deployment** | **Render (recommended)** / Railway | Free-tier cloud; report assumes Render for POC. |
-| **Tracing** | LangSmith (optional) | LLM call observability |
 
 ### 2.5 Data Sources
 
@@ -188,7 +187,7 @@ We use a **custom Python orchestrator** rather than a formal agent framework for
 |--------|----------|------------|
 | **Custom orchestrator** | ✅ Used | Simple, debuggable, matches assignment emphasis on "simplicity and robustness" and "fewest steps." Branching (emergency, clarification) is explicit in code and in architecture diagrams. |
 | **LangGraph** | Optional post-POC | Same flow; would give an explicit graph, checkpointing, and visualization (e.g. LangGraph Studio). Not required for the POC. |
-| **Google ADK** | Not used | Vertex AI–centric and off our stack (OpenAI/Anthropic, Flask). Heavier than needed for this POC. |
+| **Google ADK** | Not used | Vertex AI–centric and off our stack (OpenAI, Flask). Heavier than needed for this POC. |
 
 The same 7-agent flow could be formalized in LangGraph later without changing agent logic; the report and demo can note "orchestration could be formalized in LangGraph for production" as a next step.
 
@@ -283,10 +282,10 @@ Key factors:
 1. Integrate with a real clinic scheduling system API
 2. Add persistent session logging for audit trail
 3. Expand species coverage (currently focused on dogs and cats)
-4. Add SMS/email notification support
+4. Add SMS/email notification support (webhook layer is implemented; connect to Twilio/SendGrid)
 5. Conduct usability testing with real clinic receptionists
 6. Calibrate triage thresholds with veterinary advisor feedback
-7. Add multi-language support for diverse pet owner populations
+7. Add clinic verification/override step before sending final response to owner
 
 ---
 

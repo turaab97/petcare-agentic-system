@@ -84,7 +84,6 @@ Open `.env` in your editor and fill in your API keys:
 
 ```
 OPENAI_API_KEY=sk-your-key-here
-ANTHROPIC_API_KEY=sk-ant-your-key-here   # optional
 ```
 
 ### Step 4: Start the Server
@@ -110,7 +109,7 @@ Open [http://localhost:5002](http://localhost:5002) in your browser.
 
 1. You should see the chat interface with a welcome message
 2. Type "My dog has been vomiting" and press Enter
-3. You should get a response (stub response until orchestrator is wired up)
+3. You should get a triage response with urgency tier and guidance
 4. Click the mic button to test voice input (Chrome/Edge)
 
 ### Stopping the Server
@@ -255,7 +254,6 @@ In the Render dashboard, go to **Environment** and add:
 | Key | Value |
 |-----|-------|
 | `OPENAI_API_KEY` | `sk-your-key-here` |
-| `ANTHROPIC_API_KEY` | `sk-ant-your-key-here` (optional) |
 | `APP_ENV` | `production` |
 | `PORT` | `5002` |
 
@@ -349,8 +347,8 @@ Expected response:
 
 1. Open the app URL in your browser
 2. You should see the chat UI with a welcome message
-3. Type "My cat can't urinate" → should trigger emergency escalation (once orchestrator is wired)
-4. Type "My dog has a mild rash" → should route to routine (once orchestrator is wired)
+3. Type "My cat can't urinate" → should trigger emergency escalation
+4. Type "My dog has a mild rash" → should route to routine triage
 5. Click the mic button to test voice input
 
 ### Checklist
@@ -438,7 +436,7 @@ User (Browser)
 │       ├── Agent A: Intake         ──┐   │
 │       ├── Agent B: Safety Gate      │   │
 │       ├── Agent C: Confidence Gate  │   │
-│       ├── Agent D: Triage         ──┤── │──→ OpenAI / Anthropic API
+│       ├── Agent D: Triage         ──┤── │──→ OpenAI API
 │       ├── Agent E: Routing          │   │
 │       ├── Agent F: Scheduling       │   │
 │       └── Agent G: Guidance       ──┘   │
@@ -449,4 +447,4 @@ User (Browser)
 └─────────────────────────────────────────┘
 ```
 
-Everything runs in **one container**, **one process**, **one port**. The only external dependency is the LLM API (OpenAI/Anthropic).
+Everything runs in **one container**, **one process**, **one port**. The only external dependency is the OpenAI API (GPT-4o-mini, Whisper, TTS).
