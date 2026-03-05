@@ -40,7 +40,7 @@ Before deploying, make sure you have:
 ```bash
 git clone https://github.com/FergieFeng/petcare-agentic-system.git
 cd petcare-agentic-system
-git checkout PetCare
+git checkout main
 ```
 
 ---
@@ -226,7 +226,7 @@ Make sure your latest code is pushed:
 ```bash
 git add .
 git commit -m "prepare for deployment"
-git push -u origin PetCare
+git push -u origin main
 ```
 
 ### Step 2: Create a Render Account
@@ -243,7 +243,7 @@ Go to [render.com](https://render.com/) and sign up (free).
 | Setting | Value |
 |---------|-------|
 | **Name** | `petcare-agent` |
-| **Branch** | `PetCare_Syed` |
+| **Branch** | `main` |
 | **Region** | Oregon (or closest) |
 | **Runtime** | Docker |
 | **Instance Type** | Free |
@@ -278,7 +278,7 @@ Your app is now live at the URL shown in the Render dashboard.
 
 ### Auto-Deploy on Push
 
-Render automatically redeploys when you push to the `PetCare_Syed` branch:
+Render automatically redeploys when you push to the `main` branch:
 
 ```bash
 # Make changes, commit, push
@@ -301,7 +301,7 @@ Go to [railway.app](https://railway.app/) and sign up.
 ### Step 2: Create a New Project
 
 1. Click **New Project** → **Deploy from GitHub repo**
-2. Select `petcare-agentic-system`, branch `PetCare_Syed`
+2. Select `petcare-agentic-system`, branch `main`
 3. Railway auto-detects the Dockerfile
 
 ### Step 3: Set Environment Variables
@@ -405,7 +405,7 @@ PORT=5003 python backend/api_server.py
 
 1. Check the build logs in the Render dashboard
 2. Ensure `Dockerfile` is in the repo root
-3. Ensure the `PetCare_Syed` branch is pushed to GitHub
+3. Ensure the `main` branch is pushed to GitHub
 4. Check environment variables are set correctly
 
 ### API key errors

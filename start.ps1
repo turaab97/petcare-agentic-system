@@ -40,7 +40,7 @@ if (-not (Test-Path ".env")) {
 # --- Step 2: Pull latest code ---
 Write-Host "Pulling latest code..."
 try {
-    git pull origin PetCare 2>$null
+    git pull origin main 2>$null
 } catch {
     Write-Host "  (not a git repo or no remote - skipping pull)"
 }

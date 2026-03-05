@@ -65,9 +65,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # Production: use Gunicorn (multi-worker WSGI server)
 # Falls back to Flask dev server if gunicorn is not installed
-CMD ["python", "-c", \
-     "import subprocess, sys; \
-      try: \
-          subprocess.run(['gunicorn', '--bind', '0.0.0.0:5002', '--workers', '2', '--timeout', '120', 'backend.api_server:app'], check=True); \
-      except FileNotFoundError: \
-          subprocess.run([sys.executable, 'backend/api_server.py'], check=True)"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5002", "--workers", "2", "--timeout", "120", "backend.api_server:app"]

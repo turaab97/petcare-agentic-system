@@ -41,7 +41,7 @@ fi
 
 # --- Step 2: Pull latest code ---
 echo "Pulling latest code..."
-git pull origin PetCare 2>/dev/null || echo "  (not a git repo or no remote — skipping pull)"
+git pull origin main 2>/dev/null || echo "  (not a git repo or no remote — skipping pull)"
 echo ""
 
 # --- Step 3: Stop existing container if running ---
