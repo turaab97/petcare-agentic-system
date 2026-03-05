@@ -98,6 +98,10 @@ class Orchestrator:
 
     def process(self, user_message: str) -> dict:
         self.start_time = time.time()
+
+        if self.session.get('state') in ('complete', 'emergency', 'booked'):
+            return self._handle_post_completion(user_message)
+
         agents_executed = []
 
         # Step 1: INTAKE AGENT
@@ -340,6 +344,143 @@ class Orchestrator:
             state='complete',
             agents=agents_executed
         )
+
+    # ------------------------------------------------------------------
+    # Post-completion: appointment confirmation, new session, follow-ups
+    # ------------------------------------------------------------------
+    _RESTART_KEYWORDS = {
+        'start over', 'new session', 'reset', 'another pet',
+        'different pet', 'new concern', 'begin again', 'restart',
+    }
+    _BOOK_KEYWORDS = {
+        'book', 'confirm', 'schedule', 'yes', 'okay', 'ok',
+        'that one', 'first', 'second', 'third', '1st', '2nd', '3rd',
+        'sounds good', 'go ahead', 'please book',
+    }
+
+    def _handle_post_completion(self, user_message: str) -> dict:
+        msg_lower = user_message.lower().strip()
+
+        if any(kw in msg_lower for kw in self._RESTART_KEYWORDS):
+            for key in list(self.session.keys()):
+                if key not in ('id', 'language'):
+                    del self.session[key]
+            self.session['state'] = 'intake'
+            self.session['messages'] = []
+            self.session['agent_outputs'] = {}
+            return self._build_response(
+                message=(
+                    "No problem — let's start fresh!\n\n"
+                    "What type of pet do you have (dog, cat, or other)?"
+                ),
+                state='intake',
+                agents=[]
+            )
+
+        sched_out = self.session.get('agent_outputs', {}).get('scheduling', {}).get('output', {})
+        slots = sched_out.get('proposed_slots', [])
+
+        if any(kw in msg_lower for kw in self._BOOK_KEYWORDS) and slots:
+            chosen = self._match_slot(msg_lower, slots)
+            if chosen:
+                dt_str = chosen.get('datetime', '')
+                try:
+                    dt = datetime.fromisoformat(dt_str)
+                    friendly = dt.strftime('%A, %B %d at %I:%M %p')
+                except (ValueError, TypeError):
+                    friendly = dt_str
+                provider = chosen.get('provider', 'your veterinarian')
+                self.session['state'] = 'booked'
+                self.session['booked_slot'] = chosen
+                species = self.session.get('pet_profile', {}).get('species', 'pet')
+                return self._build_response(
+                    message=(
+                        f"Your appointment has been confirmed:\n\n"
+                        f"  **{friendly}** with **{provider}**\n\n"
+                        f"Please bring your {species} and any relevant medical records. "
+                        f"If symptoms worsen before the appointment, seek emergency care immediately.\n\n"
+                        f"Would you like to start a new session for another concern? "
+                        f"Just say **\"start over\"**."
+                    ),
+                    state='booked',
+                    agents=['booking_confirmation']
+                )
+            else:
+                slot_lines = []
+                for i, s in enumerate(slots[:3], 1):
+                    dt_str = s.get('datetime', '')
+                    try:
+                        dt = datetime.fromisoformat(dt_str)
+                        friendly = dt.strftime('%A, %B %d at %I:%M %p')
+                    except (ValueError, TypeError):
+                        friendly = dt_str
+                    slot_lines.append(f"  {i}. {friendly} with {s.get('provider')}")
+                return self._build_response(
+                    message=(
+                        "Which appointment would you like to book? "
+                        "Please pick one:\n\n" + '\n'.join(slot_lines)
+                    ),
+                    state='complete',
+                    agents=[]
+                )
+
+        if self.session.get('state') == 'booked':
+            return self._build_response(
+                message=(
+                    "Your appointment is already booked! "
+                    "If you'd like to start a new session, just say **\"start over\"**."
+                ),
+                state='booked',
+                agents=[]
+            )
+
+        if slots:
+            slot_lines = []
+            for i, s in enumerate(slots[:3], 1):
+                dt_str = s.get('datetime', '')
+                try:
+                    dt = datetime.fromisoformat(dt_str)
+                    friendly = dt.strftime('%A, %B %d at %I:%M %p')
+                except (ValueError, TypeError):
+                    friendly = dt_str
+                slot_lines.append(f"  {i}. {friendly} with {s.get('provider')}")
+            return self._build_response(
+                message=(
+                    "Would you like to book one of these appointments?\n\n"
+                    + '\n'.join(slot_lines) +
+                    "\n\nJust say which one (e.g. **\"book the first one\"** or **\"book with Dr. Chen\"**), "
+                    "or say **\"start over\"** for a new concern."
+                ),
+                state='complete',
+                agents=[]
+            )
+
+        return self._build_response(
+            message=(
+                "Your triage is complete. You can say **\"start over\"** "
+                "to begin a new session for a different concern."
+            ),
+            state='complete',
+            agents=[]
+        )
+
+    def _match_slot(self, msg: str, slots: list) -> dict | None:
+        """Best-effort matching of user message to a proposed slot."""
+        ordinals = {'first': 0, '1st': 0, '1': 0, 'second': 1, '2nd': 1, '2': 1,
+                    'third': 2, '3rd': 2, '3': 2}
+        for word, idx in ordinals.items():
+            if word in msg and idx < len(slots):
+                return slots[idx]
+        for s in slots:
+            provider = s.get('provider', '').lower()
+            if provider and provider in msg:
+                return s
+            last_name = provider.split()[-1] if provider else ''
+            if last_name and last_name in msg:
+                return s
+        if len(slots) == 1:
+            return slots[0]
+        return None
 
     def _build_response(self, message: str, state: str,
                         agents: list, emergency: bool = False) -> dict:
