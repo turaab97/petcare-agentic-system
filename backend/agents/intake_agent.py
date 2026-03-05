@@ -147,11 +147,11 @@ dermatological, injury, urinary, neurological, behavioral, or empty string."""
 
             pet_profile = parsed.get('pet_profile', {})
             symptom_details = parsed.get('symptom_details', {})
-            chief_complaint = parsed.get('chief_complaint', '') or known_complaint
+            llm_complaint = parsed.get('chief_complaint', '')
+            chief_complaint = llm_complaint or known_complaint
             intake_complete = bool(parsed.get('intake_complete', False))
             raw_questions = parsed.get('follow_up_questions', [])
 
-            # Flatten any dict questions the LLM returned despite instructions
             follow_up_questions = []
             for q in raw_questions:
                 if isinstance(q, dict):
@@ -161,25 +161,34 @@ dermatological, injury, urinary, neurological, behavioral, or empty string."""
                 elif isinstance(q, str) and q.strip():
                     follow_up_questions.append(q.strip())
 
-            # Merge species into session
             species = (pet_profile.get('species') or known_species or '').lower().strip()
             if species:
                 session.setdefault('pet_profile', {})['species'] = species
                 pet_profile['species'] = species
 
-            # Merge other profile fields
             for k, v in pet_profile.items():
                 if v and k != 'species':
                     session.setdefault('pet_profile', {})[k] = v
 
-            # Merge complaint and symptom details into session
-            if chief_complaint:
+            # Pick the best complaint: prefer LLM's if valid, else try known,
+            # else try the raw user message as a last resort.
+            final_species = (species or session.get('pet_profile', {}).get('species', ''))
+            best_complaint = ''
+            for candidate in [llm_complaint, known_complaint, user_message.strip()]:
+                if candidate and self._is_real_complaint(candidate, final_species):
+                    best_complaint = candidate
+                    break
+
+            if best_complaint:
+                chief_complaint = best_complaint
+                session.setdefault('symptoms', {})['chief_complaint'] = best_complaint
+            elif chief_complaint:
                 session.setdefault('symptoms', {})['chief_complaint'] = chief_complaint
+
             for k, v in symptom_details.items():
                 if v:
                     session.setdefault('symptoms', {})[k] = v
 
-            final_species = session.get('pet_profile', {}).get('species', '')
             final_complaint = session.get('symptoms', {}).get('chief_complaint', '')
 
             if final_species and final_complaint and self._is_real_complaint(final_complaint, final_species):

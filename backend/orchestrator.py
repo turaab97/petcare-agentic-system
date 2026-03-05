@@ -120,9 +120,6 @@ class Orchestrator:
             intake_out['species'] = session_profile['species']
         if not intake_out.get('chief_complaint') and session_symptoms.get('chief_complaint'):
             intake_out['chief_complaint'] = session_symptoms['chief_complaint']
-        # If chief_complaint is still empty, use the raw user message as fallback.
-        # The LLM sometimes files symptoms into symptom_details.additional but
-        # leaves chief_complaint blank — the user's message is always a valid complaint.
         if not intake_out.get('chief_complaint') and user_message.strip():
             intake_out['chief_complaint'] = user_message.strip()
             self.session.setdefault('symptoms', {})['chief_complaint'] = user_message.strip()
@@ -175,27 +172,45 @@ class Orchestrator:
                 self.session.setdefault('pet_profile', {})['species'] = detected_species
                 intake_out.setdefault('pet_profile', {})['species'] = detected_species
 
-        has_species = bool(
-            intake_out.get('species') or session_profile.get('species')
-        )
+        species_val = intake_out.get('species') or session_profile.get('species', '')
+        has_species = bool(species_val)
+
         raw_complaint = (
             intake_out.get('chief_complaint')
             or session_symptoms.get('chief_complaint')
             or ''
         )
         has_complaint = bool(raw_complaint) and self.intake_agent._is_real_complaint(
-            raw_complaint,
-            intake_out.get('species') or session_profile.get('species', '')
+            raw_complaint, species_val
         )
+
+        # If the LLM's complaint fails validation, try the raw user message
+        if not has_complaint and user_message.strip():
+            if self.intake_agent._is_real_complaint(user_message.strip(), species_val):
+                raw_complaint = user_message.strip()
+                intake_out['chief_complaint'] = raw_complaint
+                self.session.setdefault('symptoms', {})['chief_complaint'] = raw_complaint
+                has_complaint = True
+
+        # Track how many times we've asked for clarification to prevent loops
+        clarification_count = self.session.get('clarification_count', 0)
+
+        # After 2 failed clarifications, accept whatever the user said and proceed
+        if has_species and not has_complaint and clarification_count >= 2 and user_message.strip():
+            raw_complaint = user_message.strip()
+            intake_out['chief_complaint'] = raw_complaint
+            self.session.setdefault('symptoms', {})['chief_complaint'] = raw_complaint
+            has_complaint = True
+            logger.info(f"Forcing intake complete after {clarification_count} clarifications")
 
         if has_species and has_complaint:
             intake_out['intake_complete'] = True
             intake_out['follow_up_questions'] = []
-            intake_out['species'] = (
-                intake_out.get('species') or session_profile.get('species')
-            )
+            intake_out['species'] = species_val
             intake_out['chief_complaint'] = raw_complaint
+            self.session['clarification_count'] = 0
         else:
+            self.session['clarification_count'] = clarification_count + 1
             follow_ups = intake_out.get('follow_up_questions', [])
             if follow_ups:
                 q = follow_ups[0]
