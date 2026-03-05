@@ -31,6 +31,9 @@ Output: Owner guidance dict + clinic summary JSON
 
 import logging
 from datetime import datetime
+import os
+import json
+import openai
 
 logger = logging.getLogger('petcare.agents.guidance_summary')
 
@@ -131,7 +134,7 @@ AREA_SPECIFIC_GUIDANCE = {
         ],
         'watch_for': [
             'Rapid spreading of the affected area',
-            'Signs of infection (swelling, warmth, discharge)'
+            'Swelling, warmth, or discharge from the affected area'
         ]
     }
 }
@@ -190,15 +193,64 @@ class GuidanceSummaryAgent:
         )
         area_guidance = AREA_SPECIFIC_GUIDANCE.get(symptom_area, {})
 
-        # Merge general + area-specific guidance
-        guidance = {
-            'do': GENERAL_GUIDANCE['do'] + area_guidance.get('do', []),
-            'dont': GENERAL_GUIDANCE['dont'] + area_guidance.get('dont', []),
-            'watch_for': (
-                GENERAL_GUIDANCE['watch_for'] +
-                area_guidance.get('watch_for', [])
-            )
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        lang_code = session.get('language', 'en')
+        lang_names = {
+            'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',
+            'ar': 'Arabic', 'es': 'Spanish', 'hi': 'Hindi', 'ur': 'Urdu'
         }
+        lang_name = lang_names.get(lang_code, 'English')
+        triage_out = all_agent_outputs.get('triage', {}).get('output', {})
+        urgency_tier = triage_out.get('urgency_tier', 'Routine')
+        species = session.get('pet_profile', {}).get('species', 'pet')
+        chief_complaint = session.get('symptoms', {}).get('chief_complaint', '')
+
+        g_system = f"""You are a veterinary intake assistant writing safe waiting guidance for a worried pet owner.
+
+HARD RULES — never violate:
+1. NEVER name a disease, condition, or diagnosis (no infection, parvovirus, pancreatitis, etc.)
+2. NEVER suggest a specific medication, supplement, or dosage
+3. NEVER say "your pet has", "this sounds like", "this could be", or any speculative language
+4. In watch_for: ONLY describe observable physical signs (e.g. "swelling or discharge from the wound") — never name what condition those signs might indicate
+5. Be warm, clear, and reassuring — the owner is worried
+6. Respond in {lang_name}. JSON keys must remain in English.
+7. Respond ONLY with valid JSON — no markdown, no preamble
+
+Respond with exactly:
+{{
+  "do": ["up to 4 safe actions the owner can take while waiting"],
+  "dont": ["up to 3 things to avoid that could make things worse"],
+  "watch_for": ["up to 3 observable physical signs that mean go to emergency care immediately"]
+}}"""
+
+        g_user = (f"Urgency tier: {urgency_tier}\nPet type: {species}\n"
+                  f"Symptom area: {symptom_area}\nChief complaint: {chief_complaint}")
+
+        try:
+            g_resp = client.chat.completions.create(
+                model='gpt-4o-mini',
+                max_tokens=400,
+                temperature=0.3,
+                messages=[
+                    {'role': 'system', 'content': g_system},
+                    {'role': 'user', 'content': g_user}
+                ]
+            )
+            g_raw = g_resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
+            g_parsed = json.loads(g_raw)
+            guidance = {
+                'do': g_parsed.get('do', GENERAL_GUIDANCE['do']),
+                'dont': g_parsed.get('dont', GENERAL_GUIDANCE['dont']),
+                'watch_for': g_parsed.get('watch_for', GENERAL_GUIDANCE['watch_for'])
+            }
+        except Exception as e:
+            logger.error(f'Guidance LLM error, using templates: {e}')
+            area_guidance = AREA_SPECIFIC_GUIDANCE.get(symptom_area, {})
+            guidance = {
+                'do': GENERAL_GUIDANCE['do'] + area_guidance.get('do', []),
+                'dont': GENERAL_GUIDANCE['dont'] + area_guidance.get('dont', []),
+                'watch_for': GENERAL_GUIDANCE['watch_for'] + area_guidance.get('watch_for', [])
+            }
 
         # ----- Build the clinic-facing structured summary -----
         # This follows the canonical schema defined in

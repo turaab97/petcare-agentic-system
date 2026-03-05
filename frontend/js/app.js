@@ -423,6 +423,28 @@ async function sendMessage(source = 'text') {
         addMessage(data.message, 'assistant', isEmergency);
         speakText(data.message);
 
+        // Emergency banner — shown once at top of chat
+        if (isEmergency) {
+            if (!document.getElementById('emergency-banner')) {
+                const banner = document.createElement('div');
+                banner.id = 'emergency-banner';
+                banner.style.cssText = 'background:#c0392b;color:white;padding:12px 16px;font-weight:bold;text-align:center;border-radius:8px;margin:8px 0;font-size:15px;';
+                banner.textContent = '🚨 EMERGENCY — Please take your pet to an emergency veterinary clinic immediately. Do not wait.';
+                document.getElementById('chat-messages').prepend(banner);
+            }
+        }
+
+        // Fetch and display clinic summary panel when pipeline completes
+        if (data.state === 'complete' || data.state === 'emergency') {
+            try {
+                const sumRes = await fetch(`/api/session/${sessionId}/summary`);
+                const sumData = await sumRes.json();
+                _showClinicPanel(sumData);
+            } catch (err) {
+                console.error('Could not fetch clinic summary:', err);
+            }
+        }
+
     } catch (err) {
         removeTypingIndicator();
         addMessage(t('sendError'), 'assistant');
@@ -666,4 +688,68 @@ function updateVoiceButton(recording) {
         voiceBtn.textContent = '🎤';
         voiceBtn.title = t('voiceStart');
     }
+}
+
+function _showClinicPanel(sumData) {
+    const existing = document.getElementById('clinic-panel');
+    if (existing) existing.remove();
+
+    const metrics  = sumData.evaluation_metrics || {};
+    const out      = sumData.agent_outputs || {};
+    const triage   = (out.triage   || {}).output || {};
+    const routing  = (out.routing  || {}).output || {};
+    const sched    = (out.scheduling || {}).output || {};
+    const pet      = sumData.pet_profile || {};
+
+    const tier = triage.urgency_tier || 'Unknown';
+    const tierColor = { Emergency: '#c0392b', 'Same-day': '#e67e22', Soon: '#d4ac0d', Routine: '#27ae60' }[tier] || '#7f8c8d';
+
+    const slots = (sched.proposed_slots || []).slice(0, 3)
+        .map(s => `<li style="margin:3px 0">${s.datetime || '—'} &nbsp;·&nbsp; ${s.provider || '—'}</li>`)
+        .join('');
+
+    const factors = (triage.contributing_factors || []).join(', ') || '—';
+    const providers = (routing.providers || []).join(', ') || '—';
+    const fieldsCapt = metrics.required_fields_captured_pct != null
+        ? metrics.required_fields_captured_pct + '%' : '—';
+
+    // Safely encode the full JSON for clipboard copy
+    const jsonStr = JSON.stringify(sumData, null, 2).replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+
+    const panel = document.createElement('div');
+    panel.id = 'clinic-panel';
+    panel.style.cssText = 'border:1px solid #d0d0d0;border-radius:8px;margin:16px 0;background:#fafafa;overflow:hidden;font-size:14px;line-height:1.5;';
+    panel.innerHTML = `
+        <div id="clinic-panel-header" style="background:#2c3e50;color:white;padding:10px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+             onclick="const b=document.getElementById('clinic-panel-body');b.style.display=b.style.display==='none'?'block':'none';">
+            <span>📋 <strong>Clinic Summary</strong> <span style="font-size:11px;opacity:0.75;font-weight:normal;">(staff view only — not shown to owner)</span></span>
+            <span style="font-size:11px;opacity:0.7">click to expand / collapse</span>
+        </div>
+        <div id="clinic-panel-body" style="padding:14px 16px;">
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
+                <tr><td style="padding:3px 8px 3px 0;color:#555;width:160px;">Pet</td>
+                    <td><strong>${pet.species || '—'}</strong>${pet.pet_name ? ' &nbsp;"' + pet.pet_name + '"' : ''}${pet.age ? ' &nbsp;· Age: ' + pet.age : ''}${pet.breed ? ' &nbsp;· ' + pet.breed : ''}</td></tr>
+                <tr><td style="padding:3px 8px 3px 0;color:#555;">Urgency</td>
+                    <td><span style="background:${tierColor};color:white;padding:2px 12px;border-radius:12px;font-weight:bold;font-size:13px;">${tier}</span></td></tr>
+                <tr><td style="padding:3px 8px 3px 0;color:#555;">Rationale</td>
+                    <td style="color:#333;">${triage.rationale || '—'}</td></tr>
+                <tr><td style="padding:3px 8px 3px 0;color:#555;">Key factors</td>
+                    <td style="color:#333;">${factors}</td></tr>
+                <tr><td style="padding:3px 8px 3px 0;color:#555;">Appt type</td>
+                    <td>${routing.appointment_type || '—'}</td></tr>
+                <tr><td style="padding:3px 8px 3px 0;color:#555;">Providers</td>
+                    <td>${providers}</td></tr>
+                <tr><td style="padding:3px 8px 3px 0;color:#555;">Fields captured</td>
+                    <td>${fieldsCapt}</td></tr>
+            </table>
+            ${slots ? `<p style="margin:6px 0 3px;color:#555;">Proposed slots:</p><ul style="margin:0 0 10px 18px;padding:0;">${slots}</ul>` : ''}
+            <p style="margin:4px 0 6px;font-size:12px;color:#888;">⚠ Triage is a suggestion only. Clinic staff must review and confirm before acting.</p>
+            <button id="clinic-copy-btn"
+                onclick="const j=\`${jsonStr}\`;navigator.clipboard.writeText(j).then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='Copy full JSON',2000);}).catch(()=>this.textContent='Copy failed');"
+                style="padding:6px 16px;background:#2c3e50;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+                Copy full JSON
+            </button>
+        </div>`;
+
+    document.getElementById('chat-messages').appendChild(panel);
 }

@@ -30,6 +30,9 @@ Output: Urgency tier + rationale + confidence + contributing factors
 """
 
 import logging
+import os
+import json
+import openai
 
 logger = logging.getLogger('petcare.agents.triage')
 
@@ -79,6 +82,79 @@ class TriageAgent:
         self.agent_name = 'triage'
 
     def process(self, intake_data: dict, safety_result: dict) -> dict:
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        species = (intake_data.get('species') or
+                   intake_data.get('pet_profile', {}).get('species', 'unknown'))
+        complaint = intake_data.get('chief_complaint', '')
+        timeline = (intake_data.get('timeline', '') or
+                    intake_data.get('symptom_details', {}).get('timeline', ''))
+        eating = (intake_data.get('eating_drinking', '') or
+                  intake_data.get('symptom_details', {}).get('eating_drinking', ''))
+        energy = (intake_data.get('energy_level', '') or
+                  intake_data.get('symptom_details', {}).get('energy_level', ''))
+
+        system_prompt = """You are a veterinary triage classification assistant. Your ONLY job is to classify urgency.
+
+HARD RULES — never violate:
+1. NEVER name a disease, condition, or diagnosis in any field (no pancreatitis, parvovirus, cancer, infection, etc.)
+2. NEVER suggest medications or treatments
+3. The rationale field is read ONLY by clinic staff — use clinical observation language but NO diagnosis names
+4. Describe observations only: e.g. "vomiting x2 days + not eating = warrants same-day evaluation" — NOT "likely gastroenteritis"
+5. When uncertain always assign HIGHER urgency — under-triage is more dangerous than over-triage
+6. Respond ONLY with valid JSON — no markdown, no preamble
+
+Urgency tiers (use exactly these strings):
+- Emergency: life-threatening, go to ER now
+- Same-day: significant concern, must be seen today
+- Soon: non-urgent, seen within 1-3 days
+- Routine: standard wellness or minor concern
+
+Respond with exactly:
+{
+  "urgency_tier": "Emergency|Same-day|Soon|Routine",
+  "rationale": "brief clinical observation for clinic staff only — no diagnosis names",
+  "confidence": 0.0-1.0,
+  "contributing_factors": ["observable factor 1", "observable factor 2"]
+}"""
+
+        user_msg = (f"Species: {species}\nChief complaint: {complaint}\n"
+                    f"Timeline: {timeline}\nEating/drinking: {eating}\nEnergy level: {energy}")
+
+        try:
+            resp = client.chat.completions.create(
+                model='gpt-4o-mini',
+                max_tokens=300,
+                temperature=0.1,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_msg}
+                ]
+            )
+            raw = resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
+            parsed = json.loads(raw)
+            tier = parsed.get('urgency_tier', 'Soon')
+            if tier not in ['Emergency', 'Same-day', 'Soon', 'Routine']:
+                tier = 'Soon'
+            conf = float(parsed.get('confidence', 0.8))
+            return {
+                'agent_name': self.agent_name,
+                'status': 'success',
+                'output': {
+                    'urgency_tier': tier,
+                    'rationale': parsed.get('rationale', ''),
+                    'confidence': conf,
+                    'contributing_factors': parsed.get('contributing_factors', [])
+                },
+                'confidence': conf,
+                'warnings': []
+            }
+        except Exception as e:
+            logger.error(f'Triage LLM error, falling back to rules: {e}')
+            fallback = self._rule_based_triage(intake_data)
+            fallback.setdefault('warnings', []).append(f'Fell back to rule-based triage: {str(e)}')
+            return fallback
+
+    def _rule_based_triage(self, intake_data: dict) -> dict:
         """
         Classify urgency tier based on intake data and safety check.
 

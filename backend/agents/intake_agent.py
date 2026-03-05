@@ -23,6 +23,9 @@ Output: Structured pet_profile + symptom_details + follow-up questions
 """
 
 import logging
+import os
+import json
+import openai
 
 logger = logging.getLogger('petcare.agents.intake')
 
@@ -119,54 +122,114 @@ class IntakeAgent:
         self.agent_name = 'intake'
 
     def process(self, session: dict, user_message: str) -> dict:
-        """
-        Process a user message and extract/update intake information.
-
-        This method is called for each message during the intake phase.
-        It parses the message for relevant fields, updates the session
-        state, and determines whether more information is needed.
-
-        Args:
-            session: The current session dict containing pet_profile,
-                     symptoms, and conversation history.
-            user_message: The owner's latest text input (typed or
-                          voice-transcribed).
-
-        Returns:
-            dict with standard agent output contract:
-              - agent_name (str): 'intake'
-              - status (str): 'success' | 'needs_review'
-              - output (dict): Contains pet_profile, chief_complaint,
-                symptom_details, follow_up_questions, intake_complete
-              - confidence (float): 0.0 to 1.0
-              - warnings (list): Any issues encountered
-        """
-        # TODO: Replace this stub with LLM-powered adaptive intake.
-        #
-        # Implementation plan:
-        # 1. Send user_message + conversation history to LLM with a system
-        #    prompt that instructs structured extraction
-        # 2. LLM returns: extracted fields + identified symptom area +
-        #    next follow-up question (or 'intake_complete' if done)
-        # 3. Update session.pet_profile and session.symptoms with new fields
-        # 4. Return the next question or mark intake as complete
-        #
-        # The LLM prompt should:
-        #   - Extract structured fields from conversational text
-        #   - Identify the symptom area for follow-up selection
-        #   - Determine when enough info has been collected
-        #   - NEVER provide diagnoses or medical advice
-
-        return {
-            'agent_name': self.agent_name,
-            'status': 'success',
-            'output': {
-                'pet_profile': {},
-                'chief_complaint': user_message,
-                'symptom_details': {},
-                'follow_up_questions': [],
-                'intake_complete': False
-            },
-            'confidence': 0.0,
-            'warnings': ['Intake agent not yet implemented — using stub']
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        lang_code = session.get('language', 'en')
+        lang_names = {
+            'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',
+            'ar': 'Arabic', 'es': 'Spanish', 'hi': 'Hindi', 'ur': 'Urdu'
         }
+        lang_name = lang_names.get(lang_code, 'English')
+
+        system_prompt = f"""You are a veterinary intake assistant. Your ONLY job is to collect symptom information from a pet owner through structured questions. You are NOT a veterinarian.
+
+HARD RULES — never violate under any circumstances:
+1. NEVER name a disease, condition, or diagnosis (never say parvovirus, pancreatitis, diabetes, cancer, infection, gastroenteritis, kidney failure, or any medical condition name)
+2. NEVER suggest a specific medication, supplement, or dosage
+3. NEVER say "your pet has", "this sounds like", "this is probably", "this could be", or "this indicates [condition]"
+4. ONLY collect observable facts: species, symptoms as described by owner, duration, eating/drinking status, energy level
+5. Do NOT comment on urgency — that is handled by a separate system
+6. Always respond in {lang_name}. JSON keys must remain in English.
+7. Respond ONLY with valid JSON — no markdown, no preamble, no explanation outside the JSON
+
+Respond with exactly this structure:
+{{
+  "pet_profile": {{"species": "", "pet_name": "", "breed": "", "age": "", "weight": ""}},
+  "chief_complaint": "",
+  "symptom_details": {{"area": "", "timeline": "", "eating_drinking": "", "energy_level": "", "additional": ""}},
+  "follow_up_questions": [],
+  "intake_complete": false
+}}
+
+Rules for intake_complete:
+- Set to true ONLY when BOTH species AND chief_complaint are populated
+- If either is missing, add exactly ONE follow-up question in follow_up_questions asking for that specific missing field
+- Once both are known, set intake_complete to true even if optional fields are empty
+- follow_up_questions must contain at most 1 question at a time
+
+For the area field use one of: gastrointestinal, respiratory, dermatological, injury, urinary, neurological, behavioral — or leave empty if unclear."""
+
+        history = []
+        for msg in session.get('messages', []):
+            if msg.get('role') in ('user', 'assistant'):
+                history.append({'role': msg['role'], 'content': msg.get('content', '')})
+        history.append({'role': 'user', 'content': user_message})
+
+        try:
+            resp = client.chat.completions.create(
+                model='gpt-4o-mini',
+                max_tokens=600,
+                temperature=0.2,
+                messages=[{'role': 'system', 'content': system_prompt}] + history
+            )
+            raw = resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
+            parsed = json.loads(raw)
+
+            pet_profile = parsed.get('pet_profile', {})
+            symptom_details = parsed.get('symptom_details', {})
+            chief_complaint = parsed.get('chief_complaint', '')
+            intake_complete = bool(parsed.get('intake_complete', False))
+            follow_up_questions = parsed.get('follow_up_questions', [])
+
+            if pet_profile.get('species'):
+                session.setdefault('pet_profile', {}).update({k: v for k, v in pet_profile.items() if v})
+            if chief_complaint:
+                session.setdefault('symptoms', {})['chief_complaint'] = chief_complaint
+            for k, v in symptom_details.items():
+                if v:
+                    session.setdefault('symptoms', {})[k] = v
+
+            if not intake_complete and not follow_up_questions:
+                if not session.get('pet_profile', {}).get('species'):
+                    follow_up_questions = ['What type of pet do you have? (dog, cat, or other)']
+                elif not chief_complaint:
+                    follow_up_questions = ['Can you describe the main symptom or concern you are seeing?']
+
+            return {
+                'agent_name': self.agent_name,
+                'status': 'success',
+                'output': {
+                    'pet_profile': session.get('pet_profile', {}),
+                    'chief_complaint': chief_complaint or session.get('symptoms', {}).get('chief_complaint', ''),
+                    'symptom_details': symptom_details,
+                    'species': session.get('pet_profile', {}).get('species', ''),
+                    'follow_up_questions': follow_up_questions,
+                    'intake_complete': intake_complete
+                },
+                'confidence': 0.85 if intake_complete else 0.5,
+                'warnings': []
+            }
+
+        except Exception as e:
+            logger.error(f'Intake LLM error: {e}')
+            species = session.get('pet_profile', {}).get('species', '')
+            complaint = session.get('symptoms', {}).get('chief_complaint', '')
+            complete = bool(species and complaint)
+            fq = []
+            if not species:
+                fq = ['What type of pet do you have? (dog, cat, or other)']
+            elif not complaint:
+                fq = ['Can you describe the main symptom you are concerned about?']
+            return {
+                'agent_name': self.agent_name,
+                'status': 'success',
+                'output': {
+                    'pet_profile': session.get('pet_profile', {}),
+                    'chief_complaint': user_message,
+                    'symptom_details': {},
+                    'species': session.get('pet_profile', {}).get('species', ''),
+                    'follow_up_questions': fq,
+                    'intake_complete': complete
+                },
+                'confidence': 0.3,
+                'warnings': [f'Intake LLM failed, fallback used: {str(e)}']
+            }

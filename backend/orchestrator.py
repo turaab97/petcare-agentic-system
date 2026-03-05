@@ -284,7 +284,6 @@ class Orchestrator:
 
         message_parts = [
             f"Based on what you've told me, I'd recommend a **{urgency}** visit.",
-            f"\n{rationale}",
         ]
 
         if slots:
