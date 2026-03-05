@@ -134,15 +134,47 @@ class Orchestrator:
         agents_executed.append('intake')
         self.session['agent_outputs']['intake'] = intake_result
 
+        # Always enrich intake output with current session state so downstream
+        # agents (Safety Gate, Confidence Gate) see the full picture even if
+        # the LLM only returned partial fields in this turn.
+        intake_out = intake_result['output']
+        session_profile = self.session.get('pet_profile', {})
+        session_symptoms = self.session.get('symptoms', {})
+
+        if not intake_out.get('species') and session_profile.get('species'):
+            intake_out['species'] = session_profile['species']
+        if not intake_out.get('chief_complaint') and session_symptoms.get('chief_complaint'):
+            intake_out['chief_complaint'] = session_symptoms['chief_complaint']
+        if not intake_out.get('pet_profile'):
+            intake_out['pet_profile'] = session_profile
+        # Sync symptom area from session if missing
+        if not intake_out.get('symptom_details', {}).get('area') and session_symptoms.get('area'):
+            intake_out.setdefault('symptom_details', {})['area'] = session_symptoms['area']
+
         # If intake is not yet complete (needs more info), return follow-up
-        if not intake_result['output'].get('intake_complete', False):
-            follow_ups = intake_result['output'].get('follow_up_questions', [])
+        if not intake_out.get('intake_complete', False):
+            follow_ups = intake_out.get('follow_up_questions', [])
             if follow_ups:
+                # Ensure follow-up is always a plain string
+                q = follow_ups[0]
+                if isinstance(q, dict):
+                    q = q.get('question') or q.get('text') or str(q)
                 return self._build_response(
-                    message=follow_ups[0],
+                    message=q,
                     state='intake',
                     agents=agents_executed
                 )
+            else:
+                # intake_complete is False but no question — force complete
+                # if we have the minimum required fields from session
+                if session_profile.get('species') and session_symptoms.get('chief_complaint'):
+                    intake_out['intake_complete'] = True
+                else:
+                    return self._build_response(
+                        message='What type of pet do you have, and what symptoms are you concerned about?',
+                        state='intake',
+                        agents=agents_executed
+                    )
 
         # ------------------------------------------------------------------
         # Step 2: SAFETY GATE (Sub-Agent B)
@@ -150,7 +182,7 @@ class Orchestrator:
         # This is a safety-critical step -- it ALWAYS runs.
         # If a red flag is detected, we immediately escalate and skip booking.
         # ------------------------------------------------------------------
-        safety_result = self.safety_gate.process(intake_result['output'])
+        safety_result = self.safety_gate.process(intake_out)
         agents_executed.append('safety_gate')
         self.session['agent_outputs']['safety_gate'] = safety_result
 
@@ -184,7 +216,7 @@ class Orchestrator:
         #   - Ask clarifying questions (loop back to Intake)
         #   - Route to human receptionist (if max loops exceeded)
         # ------------------------------------------------------------------
-        confidence_result = self.confidence_gate.process(intake_result['output'])
+        confidence_result = self.confidence_gate.process(intake_out)
         agents_executed.append('confidence_gate')
         self.session['agent_outputs']['confidence_gate'] = confidence_result
 
@@ -233,7 +265,7 @@ class Orchestrator:
         # Includes evidence-based rationale and confidence score.
         # ------------------------------------------------------------------
         triage_result = self.triage_agent.process(
-            intake_result['output'], safety_result
+            intake_out, safety_result
         )
         agents_executed.append('triage')
         self.session['agent_outputs']['triage'] = triage_result
@@ -244,7 +276,7 @@ class Orchestrator:
         # Uses the clinic's routing rules (from clinic_rules.json).
         # ------------------------------------------------------------------
         routing_result = self.routing_agent.process(
-            intake_result['output'], triage_result
+            intake_out, triage_result
         )
         agents_executed.append('routing')
         self.session['agent_outputs']['routing'] = routing_result
