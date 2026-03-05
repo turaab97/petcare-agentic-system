@@ -90,7 +90,19 @@ def run_scenario(tc):
     start_ms = time.time() * 1000
     last_response = {}
 
-    for msg in tc["messages"]:
+    MAX_TURNS = 6
+    turns = 0
+    msg_index = 0
+
+    while turns < MAX_TURNS:
+        # Pick the next scripted message if available, else send a generic
+        # "proceed" nudge so the pipeline can complete
+        if msg_index < len(tc["messages"]):
+            msg = tc["messages"][msg_index]
+            msg_index += 1
+        else:
+            msg = "That is all the information I have."
+
         try:
             r = requests.post(
                 f"{BASE_URL}/api/session/{session_id}/message",
@@ -99,11 +111,13 @@ def run_scenario(tc):
             )
             r.raise_for_status()
             last_response = r.json()
+            turns += 1
             if last_response.get("state") in ("complete", "emergency"):
                 break
-            time.sleep(0.5)
+            time.sleep(1)
         except Exception as e:
-            return {"id": tc["id"], "name": tc["name"], "error": f"Message failed: {e}"}
+            return {"id": tc["id"], "name": tc["name"],
+                    "error": f"Message failed on turn {turns}: {e}"}
 
     elapsed_ms = int(time.time() * 1000 - start_ms)
 

@@ -3,132 +3,39 @@ Sub-Agent A: Intake Agent
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
-Code updated: Syed Ali Turab, March 4, 2026 — LLM-powered intake with diagnosis guardrails.
+Code updated: Syed Ali Turab, March 4, 2026 — LLM-powered intake 
+with diagnosis guardrails.
 
 Collects pet profile, chief complaint, and symptom details through
-adaptive, multi-turn follow-up questions tailored to species and symptom area.
-
-This agent is the first in the pipeline and handles the conversational
-intake flow. It:
-  1. Parses the owner's free-text message for pet profile fields
-     (species, breed, age, weight, name)
-  2. Identifies the symptom area (GI, respiratory, derm, injury, urinary, etc.)
-  3. Asks adaptive follow-up questions specific to the symptom area
-  4. Builds a structured output that downstream agents can consume
-
-The intake process is multi-turn: the agent may need 2-5 messages to
-collect all required information. The Orchestrator manages the turn loop.
-
-Input:  Owner's free-text message + current session state
-Output: Structured pet_profile + symptom_details + follow-up questions
+adaptive, multi-turn follow-up questions tailored to species and 
+symptom area.
 """
 
-import logging
 import os
 import json
+import logging
 import openai
 
 logger = logging.getLogger('petcare.agents.intake')
 
-# ---------------------------------------------------------------------------
-# LLM intake: os for env (OPENAI_API_KEY), json for parsing LLM response,
-# openai for chat completions. Updated March 4, 2026 — Syed Ali Turab.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Field Definitions
-# ---------------------------------------------------------------------------
-
-# These fields MUST be collected before we can proceed to triage.
-# If missing, the Confidence Gate will flag them.
 REQUIRED_FIELDS = ['species', 'chief_complaint']
-
-# These fields improve triage quality but aren't strictly required.
-# Missing optional fields lower confidence but don't block the flow.
-OPTIONAL_FIELDS = [
-    'pet_name', 'breed', 'age', 'weight',
-    'timeline', 'eating_drinking', 'energy_level'
-]
-
-# ---------------------------------------------------------------------------
-# Symptom-Area-Specific Follow-Up Questions
-# ---------------------------------------------------------------------------
-# When the intake agent identifies a symptom area, it selects the
-# appropriate set of follow-up questions. These are designed to collect
-# the minimum information needed for accurate triage.
-#
-# Each area's questions target the key differentiating factors that
-# determine urgency (e.g., blood in vomit → higher urgency for GI).
-
-SYMPTOM_AREA_FOLLOWUPS = {
-    'gastrointestinal': [
-        'How many times has your pet vomited in the last 24 hours?',
-        'Is there any diarrhea?',
-        'Is there any blood in the vomit or stool?',
-        'Could your pet have eaten something unusual (garbage, toys, plants)?'
-    ],
-    'respiratory': [
-        'Is your pet having difficulty breathing or breathing rapidly?',
-        'Is there coughing? If so, is it dry or productive?',
-        'Any nasal discharge?',
-        'Is the cough worse at night or after exercise?'
-    ],
-    'dermatological': [
-        'Where on the body is the skin issue?',
-        'Is there itching, redness, or hair loss?',
-        'How long has this been going on?',
-        'Any new foods, products, or environmental changes recently?'
-    ],
-    'injury': [
-        'Where is the injury located?',
-        'Is your pet able to walk/move normally?',
-        'Is there swelling or bleeding?',
-        'Do you know what caused the injury?'
-    ],
-    'urinary': [
-        'Is your pet straining to urinate?',
-        'Is there blood in the urine?',
-        'How frequently is your pet trying to urinate?',
-        'Is your pet able to produce any urine?'
-    ],
-    'neurological': [
-        'Has your pet had any seizures or tremors?',
-        'Is your pet disoriented or walking in circles?',
-        'Any head tilting or loss of balance?',
-        'How long have these symptoms been occurring?'
-    ],
-    'behavioral': [
-        'What specific behavior changes have you noticed?',
-        'When did the changes start?',
-        'Has anything in the environment changed recently?',
-        'Is your pet eating and drinking normally?'
-    ]
-}
+OPTIONAL_FIELDS = ['pet_name', 'breed', 'age', 'weight',
+                   'timeline', 'eating_drinking', 'energy_level']
 
 
 class IntakeAgent:
-    """
-    Adaptive symptom intake agent.
-
-    Conducts a structured, multi-turn conversation to collect:
-      - Pet profile (species, breed, age, weight, name)
-      - Chief complaint (primary symptom description)
-      - Symptom details (area-specific information)
-      - Timeline (when symptoms started, progression)
-      - Context (eating/drinking, energy level, possible triggers)
-
-    The agent adapts its follow-up questions based on:
-      - Species (dogs vs cats vs exotic have different common conditions)
-      - Symptom area (GI vs respiratory vs injury need different details)
-      - What information has already been collected
-    """
+    """Adaptive LLM-powered symptom intake agent."""
 
     def __init__(self):
-        """Initialize the Intake Agent."""
         self.agent_name = 'intake'
 
     def process(self, session: dict, user_message: str) -> dict:
-        # LLM-powered structured extraction. Uses gpt-4o-mini; response must be valid JSON. (Syed Ali Turab, Mar 4, 2026)
+        """
+        Extract structured intake data from owner message via LLM.
+        Sets intake_complete=True as soon as species + chief_complaint
+        are both known. Never diagnoses or names conditions.
+        Falls back to simple extraction on LLM failure.
+        """
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         lang_code = session.get('language', 'en')
         lang_names = {
@@ -137,20 +44,26 @@ class IntakeAgent:
         }
         lang_name = lang_names.get(lang_code, 'English')
 
-        # System prompt enforces: collect facts only, never name conditions or prescribe.
-        # intake_complete true only when both species and chief_complaint are present.
-        system_prompt = f"""You are a veterinary intake assistant. Your ONLY job is to collect symptom information from a pet owner through structured questions. You are NOT a veterinarian.
+        # Build what we already know so LLM does not re-ask for it
+        known_species = session.get('pet_profile', {}).get('species', '')
+        known_complaint = session.get('symptoms', {}).get('chief_complaint', '')
 
-HARD RULES — never violate under any circumstances:
-1. NEVER name a disease, condition, or diagnosis (never say parvovirus, pancreatitis, diabetes, cancer, infection, gastroenteritis, kidney failure, or any medical condition name)
-2. NEVER suggest a specific medication, supplement, or dosage
-3. NEVER say "your pet has", "this sounds like", "this is probably", "this could be", or "this indicates [condition]"
-4. ONLY collect observable facts: species, symptoms as described by owner, duration, eating/drinking status, energy level
-5. Do NOT comment on urgency — that is handled by a separate system
-6. Always respond in {lang_name}. JSON keys must remain in English.
-7. Respond ONLY with valid JSON — no markdown, no preamble, no explanation outside the JSON
+        system_prompt = f"""You are a veterinary intake assistant. Collect symptom information from a pet owner.
 
-Respond with exactly this structure:
+HARD RULES — never violate:
+1. NEVER name a disease, condition, or diagnosis
+2. NEVER suggest medications or dosages
+3. NEVER say "your pet has", "this sounds like", "this could be"
+4. ONLY collect facts: species, symptoms owner describes, duration, eating/drinking, energy
+5. Do NOT comment on urgency
+6. Respond in {lang_name}. JSON keys must stay in English.
+7. Respond ONLY with valid JSON — no markdown fences, no text outside the JSON
+
+Already collected — do NOT ask for these again:
+- species: "{known_species}"
+- chief_complaint: "{known_complaint}"
+
+Respond with EXACTLY this JSON structure (all keys required, use empty string if unknown):
 {{
   "pet_profile": {{"species": "", "pet_name": "", "breed": "", "age": "", "weight": ""}},
   "chief_complaint": "",
@@ -159,63 +72,105 @@ Respond with exactly this structure:
   "intake_complete": false
 }}
 
-Rules for intake_complete:
-- Set to true ONLY when BOTH species AND chief_complaint are populated
-- If either is missing, add exactly ONE follow-up question in follow_up_questions asking for that specific missing field
-- Once both are known, set intake_complete to true even if optional fields are empty
-- follow_up_questions must contain at most 1 question at a time
+CRITICAL rules for intake_complete and follow_up_questions:
+- Set intake_complete to true when BOTH species AND chief_complaint are known (including from prior messages)
+- If species is already known ("{known_species}") count it as collected — do NOT ask again
+- If chief_complaint is already known ("{known_complaint}") count it as collected — do NOT ask again  
+- When intake_complete is true, follow_up_questions must be an empty list []
+- When intake_complete is false, follow_up_questions must contain exactly ONE plain string question
+- follow_up_questions must be a list of strings, NOT a list of objects
+- WRONG: [{{"question": "How old?"}}]
+- RIGHT: ["How old is your pet?"]
 
-For the area field use one of: gastrointestinal, respiratory, dermatological, injury, urinary, neurological, behavioral — or leave empty if unclear."""
+For symptom_details.area use one of: gastrointestinal, respiratory, 
+dermatological, injury, urinary, neurological, behavioral — or empty string."""
 
-        # Build conversation history for context (user + assistant turns only).
         history = []
         for msg in session.get('messages', []):
             if msg.get('role') in ('user', 'assistant'):
-                history.append({'role': msg['role'], 'content': msg.get('content', '')})
+                content = msg.get('content', '')
+                # Flatten assistant messages that were stored as dicts
+                if isinstance(content, dict):
+                    content = str(content)
+                history.append({'role': msg['role'], 'content': content})
         history.append({'role': 'user', 'content': user_message})
 
         try:
-            # Call OpenAI; strip markdown fences if present, then parse JSON.
             resp = client.chat.completions.create(
                 model='gpt-4o-mini',
                 max_tokens=600,
-                temperature=0.2,
+                temperature=0.1,
                 messages=[{'role': 'system', 'content': system_prompt}] + history
             )
-            raw = resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
+            raw = resp.choices[0].message.content.strip()
+            # Strip markdown fences if present
+            if raw.startswith('```'):
+                raw = raw.split('```')[1]
+                if raw.startswith('json'):
+                    raw = raw[4:]
+            raw = raw.strip()
+
             parsed = json.loads(raw)
 
-            # Extract fields from LLM response; update session for downstream agents and summary.
             pet_profile = parsed.get('pet_profile', {})
             symptom_details = parsed.get('symptom_details', {})
-            chief_complaint = parsed.get('chief_complaint', '')
+            chief_complaint = parsed.get('chief_complaint', '') or known_complaint
             intake_complete = bool(parsed.get('intake_complete', False))
             follow_up_questions = parsed.get('follow_up_questions', [])
 
-            if pet_profile.get('species'):
-                session.setdefault('pet_profile', {}).update({k: v for k, v in pet_profile.items() if v})
+            # Flatten any dict questions the LLM returned despite instructions
+            cleaned_questions = []
+            for q in follow_up_questions:
+                if isinstance(q, dict):
+                    # Extract string value from common dict shapes
+                    cleaned_questions.append(
+                        q.get('question') or q.get('text') or str(q)
+                    )
+                elif isinstance(q, str) and q.strip():
+                    cleaned_questions.append(q.strip())
+
+            # Merge species into session
+            species = (pet_profile.get('species') or known_species or '').lower()
+            if species:
+                session.setdefault('pet_profile', {})['species'] = species
+                pet_profile['species'] = species
+
+            # Merge other profile fields
+            for k, v in pet_profile.items():
+                if v and k != 'species':
+                    session.setdefault('pet_profile', {})[k] = v
+
+            # Merge complaint and symptom details
             if chief_complaint:
                 session.setdefault('symptoms', {})['chief_complaint'] = chief_complaint
             for k, v in symptom_details.items():
                 if v:
                     session.setdefault('symptoms', {})[k] = v
 
-            # If LLM did not set follow_up_questions but intake not complete, add default by missing field.
-            if not intake_complete and not follow_up_questions:
-                if not session.get('pet_profile', {}).get('species'):
-                    follow_up_questions = ['What type of pet do you have? (dog, cat, or other)']
-                elif not chief_complaint:
-                    follow_up_questions = ['Can you describe the main symptom or concern you are seeing?']
+            # Re-check intake_complete using session state
+            # (LLM may have missed that prior messages already gave us what we need)
+            final_species = session.get('pet_profile', {}).get('species', '')
+            final_complaint = session.get('symptoms', {}).get('chief_complaint', '')
+            if final_species and final_complaint:
+                intake_complete = True
+                cleaned_questions = []
+
+            # Safety: if not complete and no question, generate one
+            if not intake_complete and not cleaned_questions:
+                if not final_species:
+                    cleaned_questions = ['What type of pet do you have? (dog, cat, or other)']
+                elif not final_complaint:
+                    cleaned_questions = ['Can you describe the main symptom you are concerned about?']
 
             return {
                 'agent_name': self.agent_name,
                 'status': 'success',
                 'output': {
                     'pet_profile': session.get('pet_profile', {}),
-                    'chief_complaint': chief_complaint or session.get('symptoms', {}).get('chief_complaint', ''),
-                    'symptom_details': symptom_details,
                     'species': session.get('pet_profile', {}).get('species', ''),
-                    'follow_up_questions': follow_up_questions,
+                    'chief_complaint': final_complaint,
+                    'symptom_details': symptom_details,
+                    'follow_up_questions': cleaned_questions,
                     'intake_complete': intake_complete
                 },
                 'confidence': 0.85 if intake_complete else 0.5,
@@ -223,24 +178,23 @@ For the area field use one of: gastrointestinal, respiratory, dermatological, in
             }
 
         except Exception as e:
-            # Fallback: use session state and user_message; do not block pipeline. (Syed Ali Turab, Mar 4, 2026)
             logger.error(f'Intake LLM error: {e}')
-            species = session.get('pet_profile', {}).get('species', '')
-            complaint = session.get('symptoms', {}).get('chief_complaint', '')
-            complete = bool(species and complaint)
+            # Fallback: use what we already know from session
+            final_species = session.get('pet_profile', {}).get('species', '')
+            final_complaint = session.get('symptoms', {}).get('chief_complaint', '') or user_message
+            session.setdefault('symptoms', {})['chief_complaint'] = final_complaint
+            complete = bool(final_species and final_complaint)
             fq = []
-            if not species:
+            if not final_species:
                 fq = ['What type of pet do you have? (dog, cat, or other)']
-            elif not complaint:
-                fq = ['Can you describe the main symptom you are concerned about?']
             return {
                 'agent_name': self.agent_name,
                 'status': 'success',
                 'output': {
                     'pet_profile': session.get('pet_profile', {}),
-                    'chief_complaint': user_message,
+                    'species': final_species,
+                    'chief_complaint': final_complaint,
                     'symptom_details': {},
-                    'species': session.get('pet_profile', {}).get('species', ''),
                     'follow_up_questions': fq,
                     'intake_complete': complete
                 },
