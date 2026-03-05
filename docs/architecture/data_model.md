@@ -133,7 +133,7 @@ Current red-flag categories:
 ### 3.4 Intake Record (Session Object -- In-Memory)
 
 **Produced by:** Orchestrator (assembled from all agent outputs)
-**Consumed by:** Guidance & Summary Agent (G), n8n webhook
+**Consumed by:** Guidance & Summary Agent (G), webhook (if configured)
 
 In production, this would be persisted to an `intake_records` table:
 
@@ -166,7 +166,7 @@ In production, this would be persisted to an `intake_records` table:
 ### 3.5 Appointment (Session Object -- In-Memory)
 
 **Produced by:** Scheduling Agent (F)
-**Consumed by:** n8n webhook (appointment confirmation workflow)
+**Consumed by:** Webhook (appointment confirmation workflow, if configured)
 
 In production, this would be persisted to an `appointments` table:
 
@@ -248,7 +248,7 @@ Role-based access control enforces minimal privilege:
 ### 6.3 Retention / TTL
 - POC: in-memory sessions are lost on server restart (no retention issue)
 - Production: intake logs should have a configurable retention policy (e.g., 90 days)
-- n8n webhook payloads should be anonymized or purged after processing
+- Webhook payloads should be anonymized or purged after processing
 
 ### 6.4 Synthetic Data
 - All test scenarios use synthetic data
@@ -267,7 +267,7 @@ Role-based access control enforces minimal privilege:
 6. Routing Agent (E) → reads clinic_rules.json routing_map, selects service line
 7. Scheduling Agent (F) → reads available_slots.json, proposes slots
 8. Guidance & Summary (G) → assembles owner guidance + clinic JSON summary
-9. Orchestrator → returns response to frontend + POSTs to n8n webhook
+9. Orchestrator → returns response to frontend + POSTs to webhook (if configured)
 ```
 
 ---

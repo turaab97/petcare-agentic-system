@@ -11,7 +11,7 @@ This document defines the repository layout for the PetCare Triage & Smart Booki
 - Flask-based API server with in-process agent orchestration
 - Modular sub-agent design (7 agents + orchestrator)
 - Static frontend served by Flask
-- Docker containerization (single container + n8n via docker-compose)
+- Docker containerization (single container; deployed on Render)
 - Comprehensive documentation separated from implementation
 
 ---
@@ -31,7 +31,7 @@ petcare-agentic-system/
 ├── .gitignore                      # Git ignore rules
 ├── requirements.txt                # Python dependencies (pip install -r)
 ├── Dockerfile                      # Single-container Docker build
-├── docker-compose.yml              # Multi-container: petcare-agent + n8n
+├── docker-compose.yml              # Multi-container (optional; includes n8n for local dev)
 ├── start.sh                        # One-click Docker start (macOS/Linux)
 ├── start.ps1                       # One-click Docker start (Windows)
 │
@@ -121,7 +121,7 @@ Configuration, deployment, and top-level documentation files. These are the firs
 | `technical_report.md` | MMAI 891 assignment report template |
 | `requirements.txt` | Python package dependencies |
 | `Dockerfile` | Single-container Docker image definition |
-| `docker-compose.yml` | Multi-container setup (petcare + n8n) |
+| `docker-compose.yml` | Multi-container setup (optional; includes n8n for local dev) |
 
 ### `backend/`
 
@@ -157,7 +157,7 @@ All documentation, organized by topic. Architecture docs describe the system des
 | **No build step** | Frontend is vanilla HTML/CSS/JS — no webpack, no npm, no transpiling |
 | **Data abstraction** | Agents read from JSON files via a consistent interface; swapping to a database changes only the data layer |
 | **Voice as a layer** | Voice endpoints live in `api_server.py` but don't alter agent logic |
-| **Docker-first** | The entire app runs in a single Docker container; n8n is a separate container via docker-compose |
+| **Docker-first** | The entire app runs in a single Docker container; deployed to Render via Dockerfile |
 | **Docs alongside code** | Documentation lives in `docs/` next to the source, not in a separate wiki |
 
 ---

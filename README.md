@@ -21,7 +21,7 @@ PetCare Agentic System is an AI receptionist framework built to reduce call over
 - Booking appointments intelligently from clinic schedule
 - Generating clinic-ready structured summaries (JSON)
 - Providing conservative waiting guidance to pet owners
-- Triggering post-intake automations via n8n (email, Slack, Sheets)
+- Triggering post-intake automations via webhook (email, Slack, etc.)
 
 The system is designed with **layered responsibility separation**, **safety constraints**, and **extensibility** in mind.
 
@@ -68,9 +68,9 @@ One system, two value propositions: better experience for owners, better workflo
 | Audience | Interface | Output |
 |----------|-----------|--------|
 | **Pet owner** | One chat interface (web) | Conversational response: suggested urgency, "do/don't while waiting" guidance, optional slot options. |
-| **Clinic** | No separate UI for POC | Structured JSON summary delivered via **email**, **Slack**, or **n8n** automation (webhook). |
+| **Clinic** | No separate UI for POC | Structured JSON summary delivered via **webhook** (configurable for email, Slack, etc.). |
 
-So: one owner-facing chat with its output; one clinic-facing JSON (same intake) sent through the clinic's chosen channel (email, Slack, n8n).
+So: one owner-facing chat with its output; one clinic-facing JSON (same intake) sent through the clinic's chosen channel (email, Slack, webhook).
 
 **Override and verification (required for clinics):**
 
@@ -82,14 +82,14 @@ So: one owner-facing chat with its output; one clinic-facing JSON (same intake) 
 
 | Phase | What gets built | Owner experience | Clinic experience |
 |-------|------------------|------------------|-------------------|
-| **POC (current)** | One pipeline: owner chat → 7 agents → owner gets **suggested** response in chat; clinic gets JSON via webhook (email/Slack/n8n). | Sends message → sees suggested urgency + guidance + slots in chat immediately. | Receives JSON summary (suggested tier, routing, summary). Override/verify is **manual** (e.g. staff reads JSON in Slack/email and contacts owner if they disagree). |
-| **Production (intended)** | Same pipeline + **clinic verification step** before owner sees final message. | Sends message → may see “We’re reviewing your case” → **after** staff/doctor verify (and optionally override) → owner gets final message or booking confirmation. | Receives JSON in Slack/email/n8n → staff/doctor **review, override urgency if needed** (e.g. change Emergency → Same-day) → **approve** → system (or staff) sends final response to owner. Emergency tier clearly flagged (additional charge). |
+| **POC (current)** | One pipeline: owner chat → 7 agents → owner gets **suggested** response in chat; clinic gets JSON via webhook. Deployed on **Render**. | Sends message → sees suggested urgency + guidance + slots in chat immediately. | Receives JSON summary (suggested tier, routing, summary). Override/verify is **manual** (e.g. staff reads JSON in Slack/email and contacts owner if they disagree). |
+| **Production (intended)** | Same pipeline + **clinic verification step** before owner sees final message. | Sends message → may see “We’re reviewing your case” → **after** staff/doctor verify (and optionally override) → owner gets final message or booking confirmation. | Receives JSON in Slack/email → staff/doctor **review, override urgency if needed** (e.g. change Emergency → Same-day) → **approve** → system (or staff) sends final response to owner. Emergency tier clearly flagged (additional charge). |
 
 **Build order:**
 
 1. **Now (POC):** Wire Orchestrator to API → unblock Intake → smoke test → validate scenarios → deploy (e.g. Render). Owner chat shows suggestion; clinic gets JSON. Document that production requires “verify before send” and override.
-2. **Clinic side for POC:** Ensure JSON includes `suggested_urgency_tier` (and optionally `is_emergency` for billing). Send to Slack/email/n8n so staff can at least see and act manually (call owner, override in their own system).
-3. **Later (production):** Add a **verification step**: e.g. (a) **n8n “human in the loop”** — JSON hits n8n, pause for staff approval in Slack (button or reply), then n8n calls back your API to post the final message to the owner’s session; or (b) **clinic queue/dashboard** — cases appear in a simple queue, staff override urgency and click “Approve & send to owner,” API updates session and notifies owner. Either way: **no final message to owner until clinic has verified (or overridden) and approved.**
+2. **Clinic side for POC:** Ensure JSON includes `suggested_urgency_tier` (and optionally `is_emergency` for billing). Send to Slack/email so staff can at least see and act manually (call owner, override in their own system).
+3. **Later (production):** Add a **verification step**: e.g. a **clinic queue/dashboard** — cases appear in a simple queue, staff override urgency and click “Approve & send to owner,” API updates session and notifies owner. Either way: **no final message to owner until clinic has verified (or overridden) and approved.**
 
 So: build the pipeline and two outputs first (owner chat + clinic JSON); then add the step where clinic verifies/overrides before the owner gets the final say.
 
@@ -103,10 +103,9 @@ So: build the pipeline and two outputs first (owner chat + clinic JSON); then ad
 graph TD
     BROWSER["User Browser — Chat UI · Voice · 7 Languages"]
 
-    BROWSER -->|HTTP| FLASK["Flask API Server — Port 5002"]
+    BROWSER -->|HTTP / HTTPS| FLASK["Flask API Server — Port 5002"]
     FLASK --> ORCH["Orchestrator"]
     FLASK --> SESSION["Session Store — In-Memory"]
-    FLASK -->|webhook| N8N_IN["n8n Webhook Receiver"]
 
     ORCH --> A["A · Intake — LLM"]
     ORCH --> B["B · Safety Gate — Rules"]
@@ -116,25 +115,19 @@ graph TD
     ORCH --> FF["F · Scheduling — Rules"]
     ORCH --> GA["G · Guidance — LLM"]
 
-    A -->|API call| OPENAI["OpenAI API — GPT-4.1 · Whisper · TTS"]
+    A -->|API call| OPENAI["OpenAI API — GPT-4o-mini · Whisper · TTS"]
     D -->|API call| OPENAI
     GA -->|API call| OPENAI
-    GA -.->|fallback| CLAUDE["Anthropic Claude 3.5"]
 
     B --> DATA["JSON Config — clinic_rules · red_flags · slots"]
     CC --> DATA
     E --> DATA
     FF --> DATA
 
-    N8N_IN --> W1["n8n: Emergency Alert"]
-    N8N_IN --> W2["n8n: Clinic Summary Email"]
-    N8N_IN --> W3["n8n: Appt Confirmation"]
-    N8N_IN --> W4["n8n: Analytics Logger"]
+    FLASK -->|webhook POST| WH["Webhook — configurable endpoint"]
+    WH --> SVC["Email · Slack · Automation"]
 
-    W1 --> SVC["Slack · Gmail · Google Sheets"]
-    W2 --> SVC
-    W3 --> SVC
-    W4 --> SVC
+    FLASK -->|Dockerfile| RENDER["Render — Cloud Deployment"]
 
     style A fill:#dc2626,color:#fff
     style D fill:#dc2626,color:#fff
@@ -143,14 +136,11 @@ graph TD
     style CC fill:#16a34a,color:#fff
     style E fill:#16a34a,color:#fff
     style FF fill:#16a34a,color:#fff
-    style N8N_IN fill:#ea580c,color:#fff
-    style W1 fill:#ea580c,color:#fff
-    style W2 fill:#ea580c,color:#fff
-    style W3 fill:#ea580c,color:#fff
-    style W4 fill:#ea580c,color:#fff
+    style WH fill:#2563eb,color:#fff
+    style RENDER fill:#7c3aed,color:#fff
 ```
 
-**Color key:** 🔴 Red = LLM-powered agent (API call) · 🟢 Green = Rule-based agent (zero cost) · 🟠 Orange = n8n workflow
+**Color key:** 🔴 Red = LLM-powered agent (API call) · 🟢 Green = Rule-based agent (zero cost) · 🔵 Blue = Webhook output · 🟣 Purple = Cloud deployment
 
 ---
 
@@ -326,16 +316,16 @@ The system supports **7 languages** with full UI translation, RTL support, and m
 |-------|-----------|------|
 | **Frontend** | HTML5 / CSS3 / JavaScript (ES6+) | Free |
 | **Backend** | Python 3.11 + Flask | Free |
-| **LLM (Primary)** | OpenAI GPT-4.1-mini | ~$0.01/session |
-| **LLM (Fallback)** | Anthropic Claude 3.5 Sonnet | ~$0.02/session |
+| **LLM (Primary)** | OpenAI GPT-4o-mini | ~$0.01/session |
+
 | **Voice STT** | OpenAI Whisper | $0.006/min |
 | **Voice TTS** | OpenAI TTS (tts-1) | $15/1M chars |
-| **LLM Framework** | LangChain + LangChain-OpenAI | Free |
-| **Workflow Automation** | n8n (self-hosted or cloud) | Free |
+
+| **Webhook Automation** | Configurable webhook POST (Slack, email, etc.) | Free |
 | **Containerization** | Docker + docker-compose | Free |
 | **Hosting** | **Render (recommended)** / Railway (free tier) | $0/mo — Render recommended for POC (GitHub auto-deploy, HTTPS). |
 | **Languages** | 7 (EN, FR, ZH, AR, ES, HI, UR) | Free |
-| **Version Control** | Git + GitHub (`PetCare_Syed` branch) | Free |
+| **Version Control** | Git + GitHub (`main` branch) | Free |
 
 See [TECH_STACK.md](TECH_STACK.md) for full details, runtime architecture, and agent deployment model.
 
@@ -380,7 +370,7 @@ All POC data is synthetic. No real patient/pet health information (PHI) is used.
 6. **Routing Agent** selects appointment type + provider pool
 7. **Scheduling Agent** proposes available slots
 8. **Guidance Agent** generates owner do/don't guidance + clinic summary
-9. **n8n** triggers post-intake automations (email, Slack, Sheets)
+9. **Webhook** fires post-intake payload to configurable endpoint (Slack, email, etc.)
 
 ---
 
@@ -397,10 +387,10 @@ All POC data is synthetic. No real patient/pet health information (PHI) is used.
 | Flask API server | ✅ Running (port 5002) |
 | Frontend (chat + voice + multilingual) | ✅ Functional |
 | Docker / docker-compose | ✅ Written |
-| n8n workflows | ✅ Webhook code implemented; n8n container in docker-compose |
+| Webhook automation | ✅ Webhook code implemented; fires on intake_complete and emergency |
 | End-to-end integration testing | ✅ Passing (evaluate.py — 6 scenarios) |
 | Unit / agent-level testing | 📋 Planned (post-POC) |
-| Deployment to cloud (Render recommended) | 📋 Planned (post-POC) |
+| Deployment to cloud (Render) | ✅ Render-ready (Dockerfile tested, deployment guide complete) |
 
 ---
 
@@ -416,8 +406,8 @@ All POC data is synthetic. No real patient/pet health information (PHI) is used.
 | 4 | Validate Scenario 1 (emergency) and Scenario 3 (toxin) — Safety Gate + emergency path | ✅ Done |
 | 5 | Validate Scenario 2 (routine skin) and Scenario 4 (ambiguous → clarify) — full pipeline + confidence gate | ✅ Done |
 | 6 | Add language to Intake/Triage/Guidance prompts; verify voice (Tier 1/2) | ✅ Done (text); voice Tier 2/3 planned post-POC |
-| 7 | Deploy to **Render** (recommended); add env vars, confirm live URL | ⬜ Post-POC |
-| 8 | Optional: n8n webhooks (Emergency Alert + Clinic Summary) | ✅ Webhook code implemented; fires on intake_complete and emergency |
+| 7 | Deploy to **Render**; add env vars, confirm live URL | ✅ Render-ready (Dockerfile tested, deployment guide written) |
+| 8 | Webhook automation (Emergency Alert + Clinic Summary) | ✅ Implemented; fires on intake_complete and emergency |
 | 9 | Evaluation: 20+ scenarios, metrics; document 1 strong + 1 failure case | ✅ Done (6 scenarios, 100% M2/M4) |
 | 10 | Report + 10–15 min demo video; final README polish | 🔄 In progress |
 
@@ -431,8 +421,8 @@ Full detail: [NEXT_STEPS.md](NEXT_STEPS.md).
 |-------|-------|--------|
 | **Phase 1** | Core text-based triage (7 agents + orchestrator) | ✅ Complete |
 | **Phase 2** | Voice support (3 tiers) + multilingual (7 languages) | ✅ Text multilingual complete; voice Tier 1 complete |
-| **Phase 3** | Docker containerization + deployment pipeline | ✅ Written |
-| **Phase 4** | n8n workflow automation (actions layer) | ✅ Webhook code implemented; n8n in docker-compose |
+| **Phase 3** | Docker containerization + Render deployment | ✅ Complete |
+| **Phase 4** | Webhook automation (actions layer) | ✅ Implemented; fires on intake_complete and emergency |
 | **Phase 5** | Evaluation & testing | ✅ Complete (100% M2, 100% M4) |
 | **Phase 6** | Report, video & polish | 🔄 In progress |
 
@@ -449,7 +439,7 @@ Requires only [Git](https://git-scm.com/) and [Docker Desktop](https://www.docke
 ```bash
 git clone https://github.com/FergieFeng/petcare-agentic-system.git
 cd petcare-agentic-system
-git checkout PetCare_Syed
+git checkout main
 ./start.sh
 ```
 
@@ -458,7 +448,7 @@ git checkout PetCare_Syed
 ```powershell
 git clone https://github.com/FergieFeng/petcare-agentic-system.git
 cd petcare-agentic-system
-git checkout PetCare_Syed
+git checkout main
 powershell -ExecutionPolicy Bypass -File start.ps1
 ```
 
@@ -480,7 +470,7 @@ docker run -p 5002:5002 --env-file .env petcare-agent
 ```bash
 git clone https://github.com/FergieFeng/petcare-agentic-system.git
 cd petcare-agentic-system
-git checkout PetCare_Syed
+git checkout main
 
 python -m venv .venv
 source .venv/bin/activate        # macOS/Linux
@@ -503,7 +493,7 @@ python api_server.py
 | `DEFAULT_LLM_MODEL` | No | Model name (default: `gpt-4.1-mini`) |
 | `PORT` | No | Server port (default: `5002`) |
 | `LOG_LEVEL` | No | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `N8N_WEBHOOK_URL` | No | n8n webhook URL (auto-set by docker-compose) |
+| `N8N_WEBHOOK_URL` | No | Webhook URL for post-intake automation (optional) |
 
 ---
 
@@ -525,7 +515,7 @@ python api_server.py
 │   ├── agent_specs/             # Per-agent design work packages (intake, triage, etc.)
 │   └── original_main/           # Preserved docs from main branch (Fergie's design)
 ├── Dockerfile                   # Single-container deployment
-├── docker-compose.yml           # Multi-container: petcare + n8n
+├── docker-compose.yml           # Multi-container (optional; includes n8n for local dev)
 ├── start.sh / start.ps1         # One-click Docker start
 ├── requirements.txt             # Python dependencies
 ├── PROJECT_PLAN.md              # Project plan and timeline
