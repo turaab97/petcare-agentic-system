@@ -83,9 +83,9 @@ Role-based data access enforces minimal privilege and prevents cross-responsibil
 | Agent | `clinic_rules.json` | `red_flags.json` | `available_slots.json` | Intake Records | Appointments |
 |-------|:-:|:-:|:-:|:-:|:-:|
 | **A -- Intake** | -- | -- | -- | -- | -- |
-| **B -- Safety Gate** | Read | Read | -- | -- | -- |
+| **B -- Safety Gate** | -- | Read | -- | -- | -- |
 | **C -- Confidence Gate** | -- | -- | -- | -- | -- |
-| **D -- Triage** | Read | -- | -- | -- | -- |
+| **D -- Triage** | -- | -- | -- | -- | -- |
 | **E -- Routing** | Read | -- | -- | -- | -- |
 | **F -- Scheduling** | -- | -- | Read | -- | Write |
 | **G -- Guidance & Summary** | -- | -- | -- | Write | -- |
@@ -96,7 +96,7 @@ Role-based data access enforces minimal privilege and prevents cross-responsibil
 **Triage Agent (D)**
 - Cannot create or modify appointments
 - Cannot access scheduling data
-- Operates strictly on rule-grounded logic from `clinic_rules.json`
+- Uses LLM (GPT-4o-mini) for urgency classification with rule-based signal-counting fallback
 
 **Scheduling Agent (F)**
 - Cannot alter triage results or urgency levels
@@ -126,7 +126,7 @@ Each sub-agent returns:
 - `output` (agent-specific structured data)
 - `confidence` (0-1)
 - `warnings[]` (if degraded or uncertain)
-- `processing_time_ms` (integer)
+- `processing_time_ms` (integer, tracked at Orchestrator level)
 
 ## Agent Quality Guidelines
 

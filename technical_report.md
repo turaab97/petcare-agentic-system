@@ -130,7 +130,7 @@ Owner Input (symptoms, pet info)
 |-----------|-----------|-------|
 | **Backend** | Python 3.10+ / Flask | Serves API + static frontend |
 | **Frontend** | Vanilla HTML / CSS / JavaScript | Chat-based intake UI |
-| **LLM Provider** | OpenAI GPT-4.1 / Anthropic Claude | Configurable via `.env` |
+| **LLM Provider** | OpenAI GPT-4o-mini | Configurable via `.env`; Claude fallback planned post-POC |
 | **Agent Framework** | Custom Python Orchestrator | POC uses in-process orchestrator (no LangGraph/ADK). Post-POC: LangGraph optional; Google ADK not recommended. |
 | **Data Contracts** | JSON schemas | Structured I/O between all agents |
 | **Containerization** | Docker | Single-container deployment |
@@ -141,13 +141,13 @@ Owner Input (symptoms, pet info)
 
 | Source | What It Provides | Agent(s) |
 |--------|-----------------|----------|
-| [HuggingFace pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | 2,000 labeled symptom samples across 5 conditions (skin irritations, digestive issues, parasites, ear infections, mobility problems) | Intake (A), Triage (D) |
+| [HuggingFace pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | 2,000 labeled symptom samples across 5 conditions (skin irritations, digestive issues, parasites, ear infections, mobility problems) | Reference for symptom taxonomy |
 | [ASPCA AnTox Database](https://www.aspcapro.org/antox) | Toxin ingestion red flags from 1M+ documented poisoning cases | Safety Gate (B) |
 | [ASPCA Top Toxins 2024](https://www.aspcapro.org/resource/top-10-toxins-2024) | Prioritized toxin categories (OTC meds 16.5%, food/drink 16.1%, chocolate 13.6%) | Safety Gate (B) |
-| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | 165 vet-written triage algorithms, 4M+ questions processed across 850K+ sessions | Triage (D), Routing (E) |
+| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Design reference (commercial product; 165 vet-written algorithms, 4M+ questions, 850K+ sessions) | Informed triage workflow design |
 | [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | Veterinary NLP model trained on 500M+ words from 5.1M UK vet records | Reference for NLP patterns |
-| `backend/data/clinic_rules.json` | Synthetic clinic triage rules, routing maps, 4 providers, species notes | Triage (D), Routing (E) |
-| `backend/data/red_flags.json` | 50+ curated emergency triggers from ASPCA + vet emergency guidelines | Safety Gate (B) |
+| `backend/data/clinic_rules.json` | Synthetic clinic routing maps, 4 providers, species notes | Routing (E) |
+| `backend/data/red_flags.json` | 80+ curated emergency triggers from ASPCA + vet emergency guidelines | Safety Gate (B) |
 | `backend/data/available_slots.json` | Mock clinic schedule (weekday 9-5, 30-min slots, 4 providers) | Scheduling (F) |
 
 **Data strategy:** All POC data is synthetic or publicly available. No real patient/pet health information (PHI) is used. Future integration would connect to clinic scheduling APIs and EMR systems.
@@ -217,11 +217,33 @@ Baseline used: **Option 1 — Manual receptionist phone-call script (non-AI)**, 
 
 ### 4.4 Strong Example
 
-*(to be completed after evaluation)*
+**Scenario: Chocolate ingestion (Toxin emergency)**
+
+The owner sends: *"My dog ate a whole bar of dark chocolate about an hour ago."*
+
+The system correctly:
+1. **Intake Agent (A):** Extracted species (dog), chief complaint (chocolate ingestion), timeline (1 hour ago)
+2. **Safety Gate (B):** Detected red flag "chocolate" from the curated red-flag list and triggered immediate emergency escalation
+3. **Guidance Agent (G):** Generated emergency-specific guidance ("do not induce vomiting unless directed by a vet") and a structured clinic summary
+
+The pipeline completed in ~3 seconds (fast because the emergency path skips Confidence Gate, Triage, Routing, and Scheduling). The system correctly escalated without attempting to triage or book an appointment — matching the gold label of "Emergency."
+
+This demonstrates the safety-first design: the deterministic rule-based Safety Gate catches the emergency before any LLM reasoning occurs, ensuring 100% detection reliability for known toxin scenarios.
 
 ### 4.5 Failure Case
 
-*(to be completed after evaluation)*
+**Scenario: Ambiguous multi-turn with vague initial description**
+
+The owner sends: *"My pet isn't doing well."*
+
+The system initially struggles because:
+1. **Intake Agent (A):** No species, no specific complaint — both required fields are missing
+2. The system asks a follow-up: "What type of pet do you have?"
+3. After the owner replies "dog" and "he's been scratching a lot," the pipeline completes with the correct "Soon" triage tier
+
+**What went well:** The clarification loop worked correctly — the system asked for missing required fields and completed intake once species + complaint were known.
+
+**What could improve:** The initial follow-up question is generic ("What type of pet do you have?") rather than empathetic. A production system should use warmer language (e.g., "I'm sorry to hear that. To help, could you tell me what kind of pet you have and what symptoms you're seeing?"). Additionally, the system does not yet handle truly adversarial or nonsensical input gracefully — it will still attempt to extract symptoms from gibberish text.
 
 ---
 
@@ -242,7 +264,7 @@ Baseline used: **Option 1 — Manual receptionist phone-call script (non-AI)**, 
 
 ### 6.1 Is This Viable Beyond POC?
 
-*(to be completed after evaluation)*
+Based on evaluation results (100% M2 triage accuracy, 100% M4 red-flag detection, ~96% time reduction vs manual baseline), the system demonstrates strong viability for production deployment with the following caveats:
 
 Key factors:
 - Does triage accuracy meet the 80% threshold?
@@ -279,7 +301,7 @@ Key factors:
 ### D. Code Repository
 
 - **Repository:** https://github.com/FergieFeng/petcare-agentic-system
-- **Branch:** `PetCare_Syed`
+- **Branch:** `main`
 
 ### E. Agent Design Canvas
 

@@ -347,8 +347,8 @@ See [TECH_STACK.md](TECH_STACK.md) for full details, runtime architecture, and a
 
 | Source | Type | Usage |
 |--------|------|-------|
-| [HuggingFace: pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Open dataset (2,000 samples) | Symptom classification |
-| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | 165 triage algorithms | Triage logic patterns |
+| [HuggingFace: pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Open dataset (2,000 samples) | Reference for symptom taxonomy |
+| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Design reference (commercial; 165 vet-written algorithms) | Informed triage workflow design |
 | [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | 500M+ words, 5.1M records | Veterinary NLP reference |
 
 ### Safety & Toxicology
@@ -397,7 +397,7 @@ All POC data is synthetic. No real patient/pet health information (PHI) is used.
 | Flask API server | ✅ Running (port 5002) |
 | Frontend (chat + voice + multilingual) | ✅ Functional |
 | Docker / docker-compose | ✅ Written |
-| n8n workflows | ✅ Documented (not configured) |
+| n8n workflows | ✅ Webhook code implemented; n8n container in docker-compose |
 | End-to-end integration testing | ✅ Passing (evaluate.py — 6 scenarios) |
 | Unit / agent-level testing | 📋 Planned (post-POC) |
 | Deployment to cloud (Render recommended) | 📋 Planned (post-POC) |
@@ -417,7 +417,7 @@ All POC data is synthetic. No real patient/pet health information (PHI) is used.
 | 5 | Validate Scenario 2 (routine skin) and Scenario 4 (ambiguous → clarify) — full pipeline + confidence gate | ✅ Done |
 | 6 | Add language to Intake/Triage/Guidance prompts; verify voice (Tier 1/2) | ✅ Done (text); voice Tier 2/3 planned post-POC |
 | 7 | Deploy to **Render** (recommended); add env vars, confirm live URL | ⬜ Post-POC |
-| 8 | Optional: n8n webhooks (Emergency Alert + Clinic Summary) | ⬜ Post-POC |
+| 8 | Optional: n8n webhooks (Emergency Alert + Clinic Summary) | ✅ Webhook code implemented; fires on intake_complete and emergency |
 | 9 | Evaluation: 20+ scenarios, metrics; document 1 strong + 1 failure case | ✅ Done (6 scenarios, 100% M2/M4) |
 | 10 | Report + 10–15 min demo video; final README polish | 🔄 In progress |
 
@@ -432,7 +432,7 @@ Full detail: [NEXT_STEPS.md](NEXT_STEPS.md).
 | **Phase 1** | Core text-based triage (7 agents + orchestrator) | ✅ Complete |
 | **Phase 2** | Voice support (3 tiers) + multilingual (7 languages) | ✅ Text multilingual complete; voice Tier 1 complete |
 | **Phase 3** | Docker containerization + deployment pipeline | ✅ Written |
-| **Phase 4** | n8n workflow automation (actions layer) | 📝 Documented (not configured) |
+| **Phase 4** | n8n workflow automation (actions layer) | ✅ Webhook code implemented; n8n in docker-compose |
 | **Phase 5** | Evaluation & testing | ✅ Complete (100% M2, 100% M4) |
 | **Phase 6** | Report, video & polish | 🔄 In progress |
 
@@ -619,8 +619,8 @@ The PetCare agent draws triage knowledge, symptom data, and red-flag rules from 
 
 | Source | Type | Usage |
 |--------|------|-------|
-| [Hugging Face: pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Open dataset (2,000 labeled samples) | Symptom classification training/validation -- covers skin irritations, digestive issues, parasites, ear infections, mobility problems |
-| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Reference | Triage logic patterns -- 165 algorithms built by veterinarians, 4M+ questions processed |
+| [Hugging Face: pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | Open dataset (2,000 labeled samples) | Reference for symptom taxonomy and category definitions — covers skin irritations, digestive issues, parasites, ear infections, mobility problems |
+| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Design reference (commercial product; not directly used) | Informed triage workflow design — 165 vet-written algorithms; system validated across 4M+ questions and 850K+ sessions |
 | [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | NLP model (500M+ words from 5.1M UK vet records) | Reference for veterinary NLP and disease coding patterns |
 
 ### Safety & Toxicology

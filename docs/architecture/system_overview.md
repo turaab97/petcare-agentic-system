@@ -83,7 +83,7 @@ Sub-Agent C: Confidence Gate → Required fields missing OR confidence too low
 | Component | Technology | Notes |
 |-----------|-----------|-------|
 | **Backend Server** | Python 3.10+ / Flask | Serves API + static frontend |
-| **LLM Provider** | OpenAI GPT-4.1 / Anthropic Claude | Configurable via `.env` |
+| **LLM Provider** | OpenAI GPT-4o-mini | Configurable via `.env`; Claude fallback planned post-POC |
 | **Agent Framework** | Custom Python Orchestrator | POC: no LangGraph/ADK; keeps flow simple and debuggable. Post-POC: LangGraph optional for formal graph; Google ADK not recommended. |
 | **Frontend** | Vanilla HTML / CSS / JavaScript | Chat-based intake UI |
 | **Data Contracts** | JSON schemas | Structured I/O between all agents |
@@ -95,12 +95,12 @@ Sub-Agent C: Confidence Gate → Required fields missing OR confidence too low
 
 | Source | What It Provides | Agent(s) Using It |
 |--------|-----------------|------------------|
-| [HuggingFace pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | 2,000 labeled symptom samples (5 conditions) | Intake (A), Triage (D) |
+| [HuggingFace pet-health-symptoms-dataset](https://huggingface.co/datasets/karenwky/pet-health-symptoms-dataset) | 2,000 labeled symptom samples (5 conditions) | Reference for symptom taxonomy |
 | [ASPCA AnTox / Top Toxins](https://www.aspcapro.org/antox) | Toxin ingestion red flags (1M+ documented cases) | Safety Gate (B) |
-| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Triage algorithm patterns (165 algorithms, 4M+ questions) | Triage (D), Routing (E) |
-| [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | Veterinary NLP reference (500M+ words, 5.1M records) | Intake (A) |
-| `backend/data/clinic_rules.json` | Clinic triage rules, routing maps, provider list | Triage (D), Routing (E) |
-| `backend/data/red_flags.json` | 50+ curated emergency triggers | Safety Gate (B) |
+| [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Design reference (commercial; 165 vet-written algorithms) | Informed triage workflow design |
+| [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | Veterinary NLP reference (500M+ words, 5.1M records) | Reference for NLP patterns |
+| `backend/data/clinic_rules.json` | Clinic routing maps, provider list, species notes | Routing (E) |
+| `backend/data/red_flags.json` | 80+ curated emergency triggers | Safety Gate (B) |
 | `backend/data/available_slots.json` | Mock clinic schedule | Scheduling (F) |
 
 ## Voice Interaction Layer
