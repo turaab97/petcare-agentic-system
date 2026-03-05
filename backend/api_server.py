@@ -3,6 +3,7 @@ PetCare Triage & Smart Booking Agent -- API Server
 
 Authors: Syed Ali Turab, Fergie Feng & Diana Liu | Team: Broadview
 Date:   March 1, 2026
+Code updated: Syed Ali Turab, March 4, 2026 — Orchestrator wiring, n8n webhook (non-blocking), requests+threading.
 
 Flask-based API server that serves the frontend and handles
 intake requests through the orchestrator agent pipeline.
@@ -35,6 +36,8 @@ import tempfile
 from datetime import datetime
 
 from flask import Flask, request, jsonify, send_from_directory, send_file
+import requests as http_requests  # For n8n webhook POST (Syed Ali Turab, Mar 4, 2026)
+import threading                  # Daemon thread so webhook does not block response
 from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
@@ -175,6 +178,70 @@ def health():
 
 
 # ===========================================================================
+# Webhook (n8n) — non-blocking after intake complete
+# Added March 4, 2026 — Syed Ali Turab. Fires when state is complete or emergency.
+# ===========================================================================
+
+def _fire_webhook(session: dict, pipeline_response: dict):
+    """
+    Fire a non-blocking POST to n8n (or any webhook) after intake completes.
+
+    Payload shape:
+      event_type   — "intake_complete" or "emergency_alert"
+      session_id   — UUID of the session
+      pet_profile  — species, name, age, weight, breed
+      triage       — urgency_tier, rationale, confidence
+      routing      — appointment_type, providers
+      scheduling   — proposed_slots
+      red_flags    — red_flag_detected, red_flags list
+      owner_guidance — do / dont / watch_for (for reference)
+      clinic_summary — full structured JSON (same as /api/session/<id>/summary)
+      metadata     — agents_executed, processing_time_ms, language
+    """
+    # Skip if N8N_WEBHOOK_URL not set (e.g. local dev). No-op is safe.
+    webhook_url = os.getenv('N8N_WEBHOOK_URL', '').strip()
+    if not webhook_url:
+        logger.debug('N8N_WEBHOOK_URL not set — skipping webhook')
+        return
+
+    out = session.get('agent_outputs', {})
+    # event_type drives downstream n8n routing (e.g. emergency_alert vs intake_complete).
+    event_type = 'emergency_alert' if pipeline_response.get('emergency') else 'intake_complete'
+
+    payload = {
+        'event_type': event_type,
+        'session_id': session.get('id'),
+        'language': session.get('language', 'en'),
+        'pet_profile': session.get('pet_profile', {}),
+        'chief_complaint': session.get('symptoms', {}).get('chief_complaint', ''),
+        'triage': out.get('triage', {}).get('output', {}),
+        'routing': out.get('routing', {}).get('output', {}),
+        'scheduling': out.get('scheduling', {}).get('output', {}),
+        'red_flags': out.get('safety_gate', {}).get('output', {}),
+        'confidence': out.get('confidence_gate', {}).get('output', {}),
+        'owner_guidance': out.get('guidance_summary', {}).get('output', {}).get('owner_guidance', {}),
+        'clinic_summary': out.get('guidance_summary', {}).get('output', {}).get('clinic_summary', {}),
+        'metadata': {
+            'created_at': session.get('created_at'),
+            'first_message_at': session.get('first_message_at'),
+            'completed_at': datetime.utcnow().isoformat(),
+            'agents_executed': list(out.keys()),
+            'processing_time_ms': pipeline_response.get('metadata', {}).get('processing_time_ms')
+        }
+    }
+
+    # Run POST in a daemon thread so the HTTP response is not delayed. (Syed Ali Turab, Mar 4, 2026)
+    def _post():
+        try:
+            r = http_requests.post(webhook_url, json=payload, timeout=8)
+            logger.info(f'Webhook fired: event={event_type} status={r.status_code}')
+        except Exception as e:
+            logger.warning(f'Webhook failed (non-blocking): {e}')
+
+    threading.Thread(target=_post, daemon=True).start()
+
+
+# ===========================================================================
 # Routes: Session Management
 # ===========================================================================
 
@@ -267,37 +334,23 @@ def handle_message(session_id):
     if not session.get('first_message_at'):
         session['first_message_at'] = now_iso
 
-    # -----------------------------------------------------------------------
-    # TODO: Wire up the Orchestrator pipeline here
-    #
-    # When calling the LLM, include the language instruction:
-    #   system_prompt += f"\nRespond in {SUPPORTED_LANGUAGES[lang_code]['name']}."
-    #
-    # The orchestrator should pass session['language'] to each sub-agent
-    # so that LLM-powered agents (Intake, Triage, Guidance) respond in
-    # the correct language, while rule-based agents remain language-agnostic.
-    # -----------------------------------------------------------------------
-
-    lang_name = SUPPORTED_LANGUAGES[lang_code]['name']
-
-    response = {
-        'message': (
-            f"[POC STUB] Received: '{user_message}'. "
-            f"Language: {lang_name}. "
-            "The orchestrator pipeline is not yet implemented. "
-            "This is a placeholder response."
-        ),
-        'state': session['state'],
-        'session_id': session_id,
-        'language': lang_code
-    }
+    # ----- Run full 7-agent pipeline (Syed Ali Turab, March 4, 2026) -----
+    # Orchestrator mutates session (agent_outputs, state). Response includes message, state, emergency, metadata.
+    from orchestrator import Orchestrator
+    orch = Orchestrator(session=session)
+    response = orch.process(user_message)
+    response['language'] = lang_code
 
     session['messages'].append({
         'role': 'assistant',
-        'content': response['message'],
+        'content': response.get('message', ''),
         'timestamp': datetime.utcnow().isoformat(),
         'language': lang_code
     })
+
+    # Fire webhook to n8n after pipeline completes (non-blocking). Only when flow reached end or emergency.
+    if response.get('state') in ('complete', 'emergency'):
+        _fire_webhook(session, response)
 
     return jsonify(response)
 
@@ -469,8 +522,8 @@ if __name__ == '__main__':
     logger.info(f"Starting PetCare API server on port {port}")
     logger.info(f"Voice enabled: {bool(os.getenv('OPENAI_API_KEY'))}")
     logger.info(
-        f"Supported languages: "
-        f"{', '.join(f'{v['name']} ({k})' for k, v in SUPPORTED_LANGUAGES.items())}"
+        "Supported languages: %s",
+        ', '.join(f"{v['name']} ({k})" for k, v in SUPPORTED_LANGUAGES.items())
     )
 
     app.run(host='0.0.0.0', port=port, debug=debug)

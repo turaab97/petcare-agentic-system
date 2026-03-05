@@ -6,6 +6,8 @@
 AI-powered Veterinary Triage & Smart Booking System
 A safety-first, multi-agent architecture designed to assist veterinary clinics with structured symptom intake, urgency triage, intelligent routing, and appointment booking — built as part of the MMAI 891 Final Project at Queen's University.
 
+**For pet owners:** Structured intake and clear next steps. **For clinics:** Triage support and structured handoffs — no diagnosis, no bypassing the doctor.
+
 ---
 
 ## 🚀 Overview
@@ -36,6 +38,60 @@ Veterinary clinics often face:
 - **Inconsistent triage** — urgency varies by who answers the phone
 
 This system addresses those issues through structured AI-assisted intake and routing with a multi-agent architecture.
+
+---
+
+## 👥 Who It's For (Two Products, One System)
+
+PetCare serves **two audiences** with **one pipeline**: pet owners get a clear intake experience and guidance; clinics get structured triage and handoffs so staff can act quickly. Think of it as two products in how we position value — owners and clinics — powered by the same backend.
+
+### For pet owners
+
+| Aspect | Description |
+|--------|-------------|
+| **Product** | Structured symptom intake & triage |
+| **What you get** | Describe your pet's issue in chat (text or optional voice) → get a **suggested** "how soon to be seen" (Emergency / Same-day / Soon / Routine), **contextual "do/don't while waiting" guidance** (tailored to symptom type from templates; we don't name diseases), and optional **appointment slot options** — without long hold times or repeating yourself. The **final** decision on when to be seen is the **clinic's** (receptionist or doctor); we only suggest based on intake. The system does **not** name conditions or diseases. The AI adds value by **structured intake**, **adaptive follow-ups**, **symptom-dependent suggested triage**, and **symptom-type-specific guidance**. |
+| **Safety** | **Not diagnosis.** We never say *what is wrong*. We only suggest *when* to be seen and give general waiting-room advice; the **clinic (receptionist/doctor) makes the real call**. No prescription. When in doubt, we tell you to **seek care** or **talk to the clinic**. Red flags trigger immediate escalation messaging. |
+
+### For clinics
+
+| Aspect | Description |
+|--------|-------------|
+| **Product** | Intake & triage support for front desk and clinical staff |
+| **What you get** | **Fewer incomplete calls**, **consistent intake**, and **structured JSON summaries** with a **suggested** urgency tier and routing so reception and vets can act quickly. The system **suggests** Emergency / Same-day / Soon / Routine for routing; the **receptionist and doctor make the final decision** — receptionist still involves the doctor when needed, same as today. Red-flag detection and handoff to staff when the system isn't confident. |
+| **Safety** | The AI **supports** intake and suggests triage; **medical and scheduling decisions stay with receptionists, nurses, and doctors**. The system never diagnoses, prescribes, or bypasses the doctor. Receptionist asks the doctor when in doubt; we don't replace that. Low-confidence or conflicting info routes to human receptionist review. |
+
+One system, two value propositions: better experience for owners, better workflow for clinics.
+
+**Two outputs, one pipeline:**
+
+| Audience | Interface | Output |
+|----------|-----------|--------|
+| **Pet owner** | One chat interface (web) | Conversational response: suggested urgency, "do/don't while waiting" guidance, optional slot options. |
+| **Clinic** | No separate UI for POC | Structured JSON summary delivered via **email**, **Slack**, or **n8n** automation (webhook). |
+
+So: one owner-facing chat with its output; one clinic-facing JSON (same intake) sent through the clinic's chosen channel (email, Slack, n8n).
+
+**Override and verification (required for clinics):**
+
+- **Staff/doctor override:** The clinic must be able to **override** the system's suggested urgency (and routing/slot if needed). If the AI suggests Emergency but staff or the doctor disagrees, they can change it to Same-day / Soon / Routine — and vice versa. The system suggests; staff/doctor decide.
+- **Verified before sending to individuals:** The suggested triage and any booking must be **verified** (and optionally overridden) by staff or the doctor **before** the final response or confirmation is sent to the pet owner. So: system produces suggestion + JSON → clinic sees it → staff/doctor verify or override → **then** the owner gets the final message or booking confirmation. No automatic send to the owner without clinic verification in the intended workflow.
+- **Emergency = additional charge:** Booking as **Emergency** often incurs an **additional charge**. Override prevents inappropriate emergency labeling (and unnecessary cost to the owner or incorrect resource use). Staff/doctor verify before confirming an emergency appointment.
+
+**How this would be built (with override and verification in place):**
+
+| Phase | What gets built | Owner experience | Clinic experience |
+|-------|------------------|------------------|-------------------|
+| **POC (current)** | One pipeline: owner chat → 7 agents → owner gets **suggested** response in chat; clinic gets JSON via webhook (email/Slack/n8n). | Sends message → sees suggested urgency + guidance + slots in chat immediately. | Receives JSON summary (suggested tier, routing, summary). Override/verify is **manual** (e.g. staff reads JSON in Slack/email and contacts owner if they disagree). |
+| **Production (intended)** | Same pipeline + **clinic verification step** before owner sees final message. | Sends message → may see “We’re reviewing your case” → **after** staff/doctor verify (and optionally override) → owner gets final message or booking confirmation. | Receives JSON in Slack/email/n8n → staff/doctor **review, override urgency if needed** (e.g. change Emergency → Same-day) → **approve** → system (or staff) sends final response to owner. Emergency tier clearly flagged (additional charge). |
+
+**Build order:**
+
+1. **Now (POC):** Wire Orchestrator to API → unblock Intake → smoke test → validate scenarios → deploy (e.g. Render). Owner chat shows suggestion; clinic gets JSON. Document that production requires “verify before send” and override.
+2. **Clinic side for POC:** Ensure JSON includes `suggested_urgency_tier` (and optionally `is_emergency` for billing). Send to Slack/email/n8n so staff can at least see and act manually (call owner, override in their own system).
+3. **Later (production):** Add a **verification step**: e.g. (a) **n8n “human in the loop”** — JSON hits n8n, pause for staff approval in Slack (button or reply), then n8n calls back your API to post the final message to the owner’s session; or (b) **clinic queue/dashboard** — cases appear in a simple queue, staff override urgency and click “Approve & send to owner,” API updates session and notifies owner. Either way: **no final message to owner until clinic has verified (or overridden) and approved.**
+
+So: build the pipeline and two outputs first (owner chat + clinic JSON); then add the step where clinic verifies/overrides before the owner gets the final say.
 
 ---
 
