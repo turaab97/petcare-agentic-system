@@ -21,8 +21,8 @@ PetCare Agentic System is an AI receptionist framework built to reduce call over
 - Booking appointments intelligently from clinic schedule
 - Generating clinic-ready structured summaries (JSON)
 - Providing conservative waiting guidance to pet owners
-- Triggering post-intake automations via webhook (email, Slack, etc.)
-- **Finding nearby veterinary clinics** via Google Maps integration (with calling and directions)
+- Triggering post-intake automations via webhook (code-ready; fires if `N8N_WEBHOOK_URL` configured — **not deployed for POC demo**)
+- **Finding nearby veterinary clinics** via Google Places API with **OpenStreetMap Overpass fallback** (calling, directions, website)
 - **Exporting triage summaries as PDF** for sharing with your vet (professional clinic-ready format)
 - **Analyzing symptom photos** via OpenAI Vision API (visual symptom observation)
 - **Remembering pet profiles** across sessions (localStorage persistence)
@@ -80,33 +80,33 @@ One system, two value propositions: better experience for owners, better workflo
 
 **Two outputs, one pipeline:**
 
-| Audience | Interface | Output |
-|----------|-----------|--------|
-| **Pet owner** | One chat interface (web) | Conversational response: suggested urgency, "do/don't while waiting" guidance, optional slot options. |
-| **Clinic** | No separate UI for POC | Structured JSON summary delivered via **webhook** (configurable for email, Slack, etc.). |
+| Audience | Interface | Output | POC Status |
+|----------|-----------|--------|------------|
+| **Pet owner** | Chat interface (web) | Conversational response: urgency, guidance, cost estimate, slot options. | ✅ Fully functional on Render |
+| **Clinic** | Summary panel in chat UI + JSON API | Structured JSON summary (urgency, routing, rationale, pet profile, all agent outputs). | ✅ JSON generated and viewable |
+| **Clinic (automation)** | Webhook POST | Same JSON delivered to Slack, email, or any endpoint. | ⚠️ Code exists; **no receiving endpoint configured for POC demo** |
 
-So: one owner-facing chat with its output; one clinic-facing JSON (same intake) sent through the clinic's chosen channel (email, Slack, webhook).
+> **POC scope note:** The pet owner side is fully functional. The clinic side produces the structured JSON that would power all clinic workflows. The webhook code exists and fires if `N8N_WEBHOOK_URL` is set, but no receiving automation (n8n, Slack, email) is deployed for the POC demo. This is appropriate for a POC demonstrating the multi-agent pipeline.
 
-**Override and verification (required for clinics):**
+**Override and verification (production requirement — not built in POC):**
 
-- **Staff/doctor override:** The clinic must be able to **override** the system's suggested urgency (and routing/slot if needed). If the AI suggests Emergency but staff or the doctor disagrees, they can change it to Same-day / Soon / Routine — and vice versa. The system suggests; staff/doctor decide.
-- **Verified before sending to individuals:** The suggested triage and any booking must be **verified** (and optionally overridden) by staff or the doctor **before** the final response or confirmation is sent to the pet owner. So: system produces suggestion + JSON → clinic sees it → staff/doctor verify or override → **then** the owner gets the final message or booking confirmation. No automatic send to the owner without clinic verification in the intended workflow.
-- **Emergency = additional charge:** Booking as **Emergency** often incurs an **additional charge**. Override prevents inappropriate emergency labeling (and unnecessary cost to the owner or incorrect resource use). Staff/doctor verify before confirming an emergency appointment.
+- **Staff/doctor override:** In production, the clinic must be able to **override** the AI's suggested urgency. The system suggests; staff/doctor decide.
+- **Verification before owner notification:** The suggested triage must be **verified** by staff/doctor **before** the final response is sent to the pet owner.
+- **Emergency = additional charge:** Override prevents inappropriate emergency labeling and unnecessary cost.
 
-**How this would be built (with override and verification in place):**
+**POC vs. Production — clinic workflow:**
 
-| Phase | What gets built | Owner experience | Clinic experience |
-|-------|------------------|------------------|-------------------|
-| **POC (current)** | One pipeline: owner chat → 7 agents → owner gets **suggested** response in chat; clinic gets JSON via webhook. Deployed on **Render**. | Sends message → sees suggested urgency + guidance + slots in chat immediately. | Receives JSON summary (suggested tier, routing, summary). Override/verify is **manual** (e.g. staff reads JSON in Slack/email and contacts owner if they disagree). |
-| **Production (intended)** | Same pipeline + **clinic verification step** before owner sees final message. | Sends message → may see “We’re reviewing your case” → **after** staff/doctor verify (and optionally override) → owner gets final message or booking confirmation. | Receives JSON in Slack/email → staff/doctor **review, override urgency if needed** (e.g. change Emergency → Same-day) → **approve** → system (or staff) sends final response to owner. Emergency tier clearly flagged (additional charge). |
+| Phase | What's built | Owner | Clinic |
+|-------|-------------|-------|--------|
+| **POC (current)** | 7-agent pipeline deployed on Render. Owner chat fully functional. Clinic JSON generated. | Sees suggested urgency + guidance + cost + slots immediately. | JSON available via API and in-chat clinic panel. Webhook code exists but no receiving endpoint configured for demo. |
+| **Production (intended)** | Same pipeline + webhook delivery + clinic verification step. | Staff verify before owner notification. | Receives JSON in Slack/email, staff override urgency, approve, then owner notified. |
 
-**Build order:**
+**Build order (from POC to production):**
 
-1. **Now (POC):** Wire Orchestrator to API → unblock Intake → smoke test → validate scenarios → deploy (e.g. Render). Owner chat shows suggestion; clinic gets JSON. Document that production requires “verify before send” and override.
-2. **Clinic side for POC:** Ensure JSON includes `suggested_urgency_tier` (and optionally `is_emergency` for billing). Send to Slack/email so staff can at least see and act manually (call owner, override in their own system).
-3. **Later (production):** Add a **verification step**: e.g. a **clinic queue/dashboard** — cases appear in a simple queue, staff override urgency and click “Approve & send to owner,” API updates session and notifies owner. Either way: **no final message to owner until clinic has verified (or overridden) and approved.**
+1. **Done (POC):** 7-agent pipeline deployed on Render. Owner chat fully functional. Clinic JSON generated and viewable via API and UI panel.
+2. **Next (post-POC):** Configure webhook endpoint (n8n, Slack, or email) so clinic staff receive JSON automatically.
+3. **Later (production):** Add clinic verification step, staff override UI, real booking API integration (Vet360, PetDesk).
 
-So: build the pipeline and two outputs first (owner chat + clinic JSON); then add the step where clinic verifies/overrides before the owner gets the final say.
 
 ---
 
@@ -147,13 +147,14 @@ graph TD
     E --> DATA
     FF --> DATA
 
-    FLASK -->|webhook POST| WH["Webhook — configurable endpoint"]
-    WH --> SVC["Email · Slack · Automation"]
+    FLASK -.->|"webhook POST (code-ready)"| WH["Webhook — configurable endpoint"]
+    WH -.-> SVC["Email · Slack · Automation (not deployed for POC)"]
 
     FLASK -->|Dockerfile| RENDER["Render — Cloud Deployment"]
 
-    BROWSER -->|Google Places API| GMAPS["Nearby Vet Finder — call · directions"]
-    BROWSER -->|Nominatim fallback| NOMINATIM["OpenStreetMap — Geocoding"]
+    FLASK -->|Google Places API| GMAPS["Nearby Vet Finder — call · directions"]
+    FLASK -->|OSM Overpass fallback| OVERPASS["OpenStreetMap Overpass — no API key needed"]
+    BROWSER -->|Nominatim geocoding| NOMINATIM["OpenStreetMap — city/postal lookup"]
     FLASK -->|/api/session/id/summary| PDF["PDF Export — fpdf2"]
     BROWSER --> GEO["Browser Geolocation"]
     BROWSER --> LS["localStorage — Pet Profile · History · Consent"]
@@ -168,9 +169,10 @@ graph TD
     style E fill:#16a34a,color:#fff
     style FF fill:#16a34a,color:#fff
     style AUTH fill:#f59e0b,color:#000
-    style WH fill:#2563eb,color:#fff
+    style WH fill:#94a3b8,color:#fff
     style RENDER fill:#7c3aed,color:#fff
     style GMAPS fill:#ea4335,color:#fff
+    style OVERPASS fill:#ea4335,color:#fff
     style NOMINATIM fill:#ea4335,color:#fff
     style VISION fill:#dc2626,color:#fff
     style WHISPER fill:#2563eb,color:#fff
@@ -184,7 +186,7 @@ graph TD
     style COMPLETED fill:#0d9488,color:#fff
 ```
 
-**Color key:** 🔴 Red = LLM/API-powered · 🟢 Green = Client-side (free) · 🔵 Blue = OpenAI voice APIs · 🟠 Orange = Auth middleware · 🟣 Purple = Cloud deployment
+**Color key:** 🔴 Red = LLM/API-powered · 🟢 Green = Client-side (free) · 🔵 Blue = OpenAI voice APIs · 🟠 Orange = Auth middleware · 🟣 Purple = Cloud deployment · ⬜ Gray dashed = Code-ready but not deployed for POC
 
 ---
 
@@ -375,11 +377,11 @@ The system supports **7 languages** with full UI translation, RTL support, and m
 | **Voice STT** | OpenAI Whisper | $0.006/min |
 | **Voice TTS** | OpenAI TTS (tts-1) | $15/1M chars |
 | **Photo Analysis** | OpenAI Vision (GPT-4o-mini) | ~$0.002/photo |
-| **Nearby Vets** | Google Places API | Free tier (up to $200/mo credit) |
+| **Nearby Vets** | Google Places API + OpenStreetMap Overpass (fallback) | Free (OSM fallback requires no API key) |
 | **PDF Export** | fpdf2 (server-side) | Free |
 | **Pet Profile & History** | Browser localStorage | Free |
 
-| **Webhook Automation** | Configurable webhook POST (Slack, email, etc.) | Free |
+| **Webhook Automation** | Configurable webhook POST (code-ready; not deployed for POC demo) | Free |
 | **Containerization** | Docker + docker-compose | Free |
 | **Hosting** | **Render (recommended)** / Railway (free tier) | $0/mo — Render recommended for POC (GitHub auto-deploy, HTTPS). |
 | **Languages** | 7 (EN, FR, ZH, AR, ES, HI, UR) | Free |
@@ -417,59 +419,81 @@ The following were consulted for domain context and workflow design only. They a
 
 ## 🧪 MVP Demo Flow
 
-1. Owner describes symptoms via chat (text, voice, or photo — any of 7 languages)
-2. **Intake Agent** asks structured follow-up questions
-3. **Safety Gate** checks for emergency red flags
-4. **Confidence Gate** verifies data completeness
-5. **Triage Agent** classifies urgency tier
-6. **Routing Agent** selects appointment type + provider pool
-7. **Scheduling Agent** proposes available slots
-8. **Guidance Agent** generates owner do/don't guidance + clinic summary
-9. Owner can **book an appointment**, **find nearby vets**, **download PDF summary**, or **start over**
-10. **Webhook** fires post-intake payload to configurable endpoint (Slack, email, etc.)
+**What happens live in the POC demo (all steps run on Render):**
+
+1. Owner visits the live site → sees onboarding walkthrough → accepts consent banner
+2. Owner describes symptoms via **chat** (text, voice, or photo — any of 7 languages)
+3. **Intake Agent** (LLM) asks structured follow-up questions (species, symptoms, timeline, etc.)
+4. **Safety Gate** (rules) checks for 50+ emergency red-flag phrases
+5. **Confidence Gate** (rules) verifies data completeness — loops back if fields missing
+6. **Triage Agent** (LLM) classifies urgency: Emergency / Same-day / Soon / Routine
+7. **Routing Agent** (rules) selects appointment type + provider pool from clinic rules
+8. **Scheduling Agent** (rules) proposes available slots from mock schedule
+9. **Guidance Agent** (LLM) generates "do/don't while waiting" guidance + clinic JSON summary
+10. Owner sees: **urgency**, **guidance**, **cost estimate**, **appointment slots** — all in their chosen language
+11. Post-triage actions available: **Find nearby vets** (with call/directions), **Download PDF summary**, **Download chat transcript**, **Book appointment**, **Give feedback** (1-5 stars), **Set reminder**
+12. Clinic summary panel displays structured JSON (species, urgency, rationale, routing, factors)
+
+**What is NOT deployed for the POC demo:**
+
+- **Webhook / n8n automation:** The webhook code exists in `api_server.py` and will fire a POST to any URL set in `N8N_WEBHOOK_URL`, but no receiving endpoint (n8n, Slack, email) is configured for the POC. In production, this would deliver the clinic JSON to the clinic's chosen channel.
+- **Clinic verification/override step:** Not built. In production, staff would review the AI's suggested triage, optionally override the urgency tier, and approve before the owner receives a final confirmed response.
+- **Clinic dashboard / queue:** Not built. In production, this would be a simple UI where staff see incoming cases, override urgency, and click "Approve."
+- **Real clinic booking API:** The POC books against a mock `available_slots.json`. Production would integrate with a real clinic scheduling system (Vet360, PetDesk, etc.).
 
 ---
 
 ## ✅ Current Status
 
-> **v1.0-poc — tested and passing.** The 7-agent pipeline is wired end-to-end and passes evaluation with **100% triage accuracy (M2)** and **100% red-flag detection (M4)** across 6 synthetic scenarios, with an average processing time of ~11.4 seconds.
+> **v1.0-poc — deployed and live on Render.** The 7-agent pipeline is wired end-to-end and passes evaluation with **100% triage accuracy (M2)** and **100% red-flag detection (M4)** across 6 synthetic scenarios, with an average processing time of ~11.4 seconds. Live URL: `https://petcare-agentic-system.onrender.com` (password-protected).
 
-| Area | Status |
-|------|--------|
-| Architecture & documentation | ✅ Complete |
-| Agent Design Canvas & Baseline methodology (see [AGENT_DESIGN_CANVAS](docs/AGENT_DESIGN_CANVAS.md), [BASELINE_METHODOLOGY](docs/BASELINE_METHODOLOGY.md)) | ✅ Documented (Diana) |
-| Agent implementations (A–G) | ✅ Implemented & tested |
-| Orchestrator | ✅ Implemented & tested |
-| Flask API server | ✅ Running (port 5002) |
-| Frontend (chat + voice + multilingual + photo) | ✅ Functional |
-| Frontend redesign (warm teal theme, paw avatars, Inter font) | ✅ Complete |
-| Nearby vet finder (Google Places API) | ✅ Implemented (with call/directions) |
-| PDF triage summary export | ✅ Implemented (clinic-ready format) |
-| Photo symptom analysis (OpenAI Vision) | ✅ Implemented |
-| Pet profile persistence (localStorage) | ✅ Implemented |
-| Symptom history tracker (localStorage) | ✅ Implemented |
-| Post-triage appointment booking flow | ✅ Implemented |
-| Streaming responses | ✅ Implemented |
-| Cost estimator | ✅ Implemented |
-| Feedback rating | ✅ Implemented |
-| Follow-up reminders | ✅ Implemented |
-| Breed-specific risk alerts | ✅ Implemented |
-| Dark mode | ✅ Implemented |
-| PWA support | ✅ Implemented |
-| Chat transcript export | ✅ Implemented |
-| Animated onboarding | ✅ Implemented |
-| HTTP Basic Auth (password protection) | ✅ Implemented (env vars only, never hardcoded) |
-| Two-tier session persistence (24hr PDF access) | ✅ Implemented |
-| Location fallback (manual city entry + default) | ✅ Implemented |
-| Full multilingual output (all UI strings in all 7 languages) | ✅ Implemented |
-| Consent & privacy banner (PIPEDA/PHIPA) | ✅ Implemented |
-| Voice support (Tier 1 + Tier 2) | ✅ Implemented (Tier 3 Realtime API is stretch) |
-| Docker / docker-compose + Gunicorn | ✅ Written (production-ready) |
-| Webhook automation (optional) | ✅ Implemented; fires only if `N8N_WEBHOOK_URL` set |
-| End-to-end integration testing | ✅ Passing (evaluate.py — 6 scenarios) |
-| Unit / agent-level testing | 📋 Planned (post-POC) |
-| Deployment to cloud (Render) | ✅ Render-ready (Dockerfile tested, deployment guide complete) |
-| All documentation updated | ✅ Complete (architecture, agent specs, design canvas, tech stack) |
+### Pet Owner Side (fully functional in POC)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| 7-agent pipeline (Intake → Safety → Confidence → Triage → Routing → Scheduling → Guidance) | ✅ Live on Render | Full end-to-end flow working |
+| Chat UI (text input + streaming responses) | ✅ Live on Render | Character-by-character streaming, warm teal theme |
+| Voice input/output (Tier 1: browser + Tier 2: OpenAI Whisper/TTS) | ✅ Live on Render | Tier 3 Realtime API is post-POC stretch |
+| Multilingual support (7 languages, RTL for Arabic/Urdu) | ✅ Live on Render | All UI strings + LLM output in selected language |
+| Photo symptom analysis (OpenAI Vision) | ✅ Live on Render | Upload photo → AI visual observation |
+| Nearby vet finder (Google Places + OpenStreetMap fallback) | ✅ Live on Render | OSM Overpass fallback if Google API unavailable; call/directions/website |
+| PDF triage summary export | ✅ Live on Render | Clinic-ready format, 24hr persistence |
+| Chat transcript export | ✅ Live on Render | Full conversation download as .txt |
+| Pet profile persistence | ✅ Live on Render | localStorage — remembered across sessions |
+| Symptom history tracker | ✅ Live on Render | localStorage — past triages viewable |
+| Post-triage appointment booking | ✅ Live on Render | Simulated booking from `available_slots.json` |
+| Cost estimator | ✅ Live on Render | Estimated visit cost shown post-triage |
+| Feedback rating (1–5 stars) | ✅ Live on Render | Quality measurement data |
+| Follow-up reminders | ✅ Live on Render | Browser notifications |
+| Breed-specific risk alerts | ✅ Live on Render | Known health conditions surfaced |
+| Consent & privacy banner (PIPEDA/PHIPA) | ✅ Live on Render | Shown on first visit |
+| Dark mode | ✅ Live on Render | Toggle in header |
+| PWA support | ✅ Live on Render | Installable on mobile |
+| Animated onboarding | ✅ Live on Render | 3-step walkthrough for first-time users |
+
+### Clinic Side (POC scope — see note below)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Structured JSON summary (all agent outputs) | ✅ Live on Render | Accessible via `GET /api/session/<id>/summary`; displayed in clinic panel after triage |
+| Webhook code (POST to configurable endpoint) | ⚠️ Code-ready, **not deployed** | Fires only if `N8N_WEBHOOK_URL` env var is set — no n8n/Slack/email endpoint is configured for POC demo |
+| Clinic verification/override step | 📋 Production-only | Not built — requires clinic dashboard; documented as intended production workflow |
+| Clinic dashboard / queue | 📋 Production-only | Not built — would allow staff to review, override urgency, approve before owner notification |
+
+> **Note on clinic side:** The POC focuses on the **pet owner experience** and the **agent pipeline**. The clinic receives a structured JSON summary (viewable in the UI panel and via API), which is the data payload that would power clinic workflows in production. The webhook endpoint exists in code and will fire a POST request if `N8N_WEBHOOK_URL` is configured, but **no receiving automation (n8n, Slack, email) is deployed for the POC demo**. In production, this webhook would deliver the JSON to the clinic's chosen channel, and a verification step would be added before the owner receives a final confirmed response.
+
+### Infrastructure & Security
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Docker + Gunicorn (single-worker + threads) | ✅ Live on Render | Dockerfile tested and deployed |
+| HTTP Basic Auth (password protection) | ✅ Live on Render | Credentials via env vars only, never hardcoded |
+| Two-tier session store (active 1hr / completed 24hr) | ✅ Live on Render | PDF downloads persist for 24 hours |
+| Security hardening (input validation, XSS, prompt injection) | ✅ Live on Render | See [AGENT_DESIGN_CANVAS](docs/AGENT_DESIGN_CANVAS.md) for full audit |
+| Cache-busting for frontend assets | ✅ Live on Render | Versioned JS/CSS imports, no-cache headers |
+| End-to-end integration testing (evaluate.py) | ✅ Passing | 6 scenarios, 100% M2/M4 |
+| Unit / agent-level testing | 📋 Planned | Post-POC |
+| Architecture & documentation | ✅ Complete | All docs updated to match POC |
 
 ---
 
@@ -486,7 +510,7 @@ The following were consulted for domain context and workflow design only. They a
 | 5 | Validate Scenario 2 (routine skin) and Scenario 4 (ambiguous → clarify) — full pipeline + confidence gate | ✅ Done |
 | 6 | Add language to Intake/Triage/Guidance prompts; verify voice (Tier 1/2) | ✅ Done (text); voice Tier 2/3 planned post-POC |
 | 7 | Deploy to **Render**; add env vars, confirm live URL | ✅ Done (Dockerfile tested; use [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)) |
-| 8 | Webhook automation (optional; Emergency Alert + Clinic Summary) | ✅ Implemented; optional — fires only if `N8N_WEBHOOK_URL` set |
+| 8 | Webhook automation (optional; Emergency Alert + Clinic Summary) | ⚠️ Code-ready; fires if `N8N_WEBHOOK_URL` set — **no receiving endpoint deployed for POC demo** |
 | 9 | Evaluation: 20+ scenarios, metrics; document 1 strong + 1 failure case | ✅ Done (6 scenarios, 100% M2/M4) |
 | 10 | Report + 10–15 min demo video; final README polish | 🔄 In progress |
 
@@ -501,7 +525,7 @@ Full detail: [NEXT_STEPS.md](NEXT_STEPS.md).
 | **Phase 1** | Core text-based triage (7 agents + orchestrator) | ✅ Complete |
 | **Phase 2** | Voice support (3 tiers) + multilingual (7 languages) | ✅ Text multilingual complete; voice Tier 1 complete |
 | **Phase 3** | Docker containerization + Render deployment | ✅ Complete |
-| **Phase 4** | Webhook automation (optional; actions layer) | ✅ Implemented; optional for POC |
+| **Phase 4** | Webhook automation (optional; actions layer) | ⚠️ Code-ready; webhook fires if `N8N_WEBHOOK_URL` set — no receiving endpoint deployed for POC |
 | **Phase 5** | Evaluation & testing | ✅ Complete (100% M2, 100% M4) |
 | **Phase 6** | Enhanced UX: nearby vets, PDF export, photo analysis, pet profiles, symptom history | ✅ Complete |
 | **Phase 7** | Consumer-ready features: streaming responses, consent banner, cost estimator, feedback, dark mode, PWA, onboarding | ✅ Complete |
@@ -570,7 +594,7 @@ python api_server.py
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o-mini, Whisper, TTS, Vision |
-| `GOOGLE_MAPS_API_KEY` | Yes | Google Maps API key for nearby vet finder (requires Places API New enabled) |
+| `GOOGLE_MAPS_API_KEY` | No | Google Places API key for nearby vet finder (optional — falls back to OpenStreetMap Overpass API if missing or disabled) |
 | `AUTH_ENABLED` | No | Set to `true` to enable HTTP Basic Auth (default: `false`) |
 | `AUTH_USERNAME` | No | Username for HTTP Basic Auth (set via environment only — never hardcode) |
 | `AUTH_PASSWORD` | No | Password for HTTP Basic Auth (set via environment only — never hardcode) |
@@ -717,13 +741,13 @@ See the [Data Sources](#-data-sources) section above for the main breakdown. Sum
 - **Operational (used at runtime):** `backend/data/clinic_rules.json`, `red_flags.json`, `available_slots.json` only. All synthetic; no PHI.
 - **Design references (not used at runtime):** HuggingFace pet-health-symptoms-dataset, Vet-AI Symptom Checker, SAVSNET/PetBERT, ASPCA, veterinary textbooks — consulted for domain context and for curating the operational files above.
 
-**Deployment:** POC uses **Render** for cloud deployment. Webhook/n8n is **optional** (only fires if `N8N_WEBHOOK_URL` is set).
+**Deployment:** POC uses **Render** for cloud deployment. Webhook code is present and fires if `N8N_WEBHOOK_URL` is set, but **no receiving endpoint (n8n, Slack, email) is deployed for the POC demo**.
 
 ---
 
 ## Current Status
 
-> **v1.0-poc — tested and passing.** See the [Current Status](#-current-status) section above for full details.
+> **v1.0-poc — deployed and live on Render.** Pet owner side fully functional. Clinic JSON generated (webhook code-ready but not deployed for demo). See the [Current Status](#-current-status) section above for full details.
 
 ---
 
