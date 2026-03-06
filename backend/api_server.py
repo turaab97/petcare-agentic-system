@@ -99,8 +99,10 @@ def require_auth():
 
 @app.after_request
 def add_cache_headers(response):
-    if request.path.endswith(('.js', '.css', '.html')):
-        response.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    if request.path.endswith(('.js', '.css', '.html')) or request.path == '/':
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     return response
 
 # ---------------------------------------------------------------------------
@@ -539,7 +541,7 @@ def nearby_vets():
         if google_result is not None:
             return google_result
 
-    osm_result = _search_overpass(lat, lng, radius_m)
+    osm_result = _search_osm_nominatim(lat, lng, radius_m)
     if osm_result is not None:
         return osm_result
 
@@ -547,23 +549,23 @@ def nearby_vets():
 
 
 def _search_google_places(api_key, lat, lng, radius_m, radius_km):
-    """Try Google Places API (New). Returns a Flask response or None on failure."""
-    import math
+    """Try Google Places API. Attempts the New API first, then legacy. Returns Flask response or None."""
+    result = _try_google_places_new(api_key, lat, lng, radius_m, radius_km)
+    if result is not None:
+        return result
+    return _try_google_places_legacy(api_key, lat, lng, radius_m, radius_km)
+
+
+def _try_google_places_new(api_key, lat, lng, radius_m, radius_km):
+    """Google Places API (New) — places.googleapis.com."""
     try:
         field_mask = ','.join([
-            'places.displayName',
-            'places.formattedAddress',
-            'places.location',
-            'places.rating',
-            'places.userRatingCount',
-            'places.nationalPhoneNumber',
-            'places.internationalPhoneNumber',
-            'places.googleMapsUri',
-            'places.websiteUri',
-            'places.currentOpeningHours',
-            'places.regularOpeningHours',
+            'places.displayName', 'places.formattedAddress', 'places.location',
+            'places.rating', 'places.userRatingCount',
+            'places.nationalPhoneNumber', 'places.internationalPhoneNumber',
+            'places.googleMapsUri', 'places.websiteUri',
+            'places.currentOpeningHours', 'places.regularOpeningHours',
         ])
-
         search_resp = http_requests.post(
             'https://places.googleapis.com/v1/places:searchNearby',
             headers={
@@ -583,39 +585,31 @@ def _search_google_places(api_key, lat, lng, radius_m, radius_km):
             },
             timeout=10,
         )
-        search_data = search_resp.json()
-
-        if 'error' in search_data:
-            logger.warning(f"Google Places failed, falling back to OSM: "
-                           f"{search_data['error'].get('message','')}")
+        data = search_resp.json()
+        if 'error' in data:
+            logger.warning(f"Places API (New) failed: {data['error'].get('message','')}")
             return None
 
         results = []
-        for place in search_data.get('places', []):
+        for place in data.get('places', []):
             loc = place.get('location', {})
-            plat = loc.get('latitude', 0)
-            plng = loc.get('longitude', 0)
-            dist_km = _haversine(lat, lng, plat, plng)
-
-            cur_hours = place.get('currentOpeningHours', {})
-            reg_hours = place.get('regularOpeningHours', {})
-            open_now = cur_hours.get('openNow', reg_hours.get('openNow'))
-
+            plat, plng_ = loc.get('latitude', 0), loc.get('longitude', 0)
+            dist_km = _haversine(lat, lng, plat, plng_)
+            cur_h = place.get('currentOpeningHours', {})
+            reg_h = place.get('regularOpeningHours', {})
             hours_today = ''
-            weekday_descs = cur_hours.get('weekdayDescriptions',
-                                          reg_hours.get('weekdayDescriptions', []))
-            if weekday_descs:
-                today_idx = datetime.now().weekday()
-                if today_idx < len(weekday_descs):
-                    hours_today = weekday_descs[today_idx]
-
+            descs = cur_h.get('weekdayDescriptions', reg_h.get('weekdayDescriptions', []))
+            if descs:
+                idx = datetime.now().weekday()
+                if idx < len(descs):
+                    hours_today = descs[idx]
             results.append({
                 'name': place.get('displayName', {}).get('text', ''),
                 'address': place.get('formattedAddress', ''),
                 'rating': place.get('rating'),
                 'total_ratings': place.get('userRatingCount', 0),
                 'distance_km': round(dist_km, 1),
-                'open_now': open_now,
+                'open_now': cur_h.get('openNow', reg_h.get('openNow')),
                 'phone': place.get('nationalPhoneNumber', ''),
                 'phone_intl': place.get('internationalPhoneNumber', ''),
                 'maps_url': place.get('googleMapsUri', ''),
@@ -623,67 +617,119 @@ def _search_google_places(api_key, lat, lng, radius_m, radius_km):
                 'hours_today': hours_today,
                 'source': 'google',
             })
-
         results.sort(key=lambda x: x['distance_km'])
-        logger.info(f"Google Places: found {len(results)} vets within {radius_km}km")
+        logger.info(f"Google Places (New): {len(results)} vets within {radius_km}km")
         return jsonify({'vets': results, 'count': len(results)})
-
     except Exception as e:
-        logger.warning(f"Google Places exception, falling back to OSM: {e}")
+        logger.warning(f"Places API (New) exception: {e}")
         return None
 
 
-def _search_overpass(lat, lng, radius_m):
-    """Fallback: find vets via OpenStreetMap Overpass API (no API key needed)."""
-    import math
-    query = f"""
-    [out:json][timeout:10];
-    (
-      node["amenity"="veterinary"](around:{radius_m},{lat},{lng});
-      way["amenity"="veterinary"](around:{radius_m},{lat},{lng});
-    );
-    out body center;
-    """
+def _try_google_places_legacy(api_key, lat, lng, radius_m, radius_km):
+    """Google Places API (legacy) — maps.googleapis.com."""
     try:
-        resp = http_requests.post(
-            'https://overpass-api.de/api/interpreter',
-            data={'data': query},
-            timeout=15,
+        resp = http_requests.get(
+            'https://maps.googleapis.com/maps/api/place/nearbysearch/json',
+            params={
+                'location': f'{lat},{lng}',
+                'radius': radius_m,
+                'type': 'veterinary_care',
+                'key': api_key,
+            },
+            timeout=10,
         )
-        if resp.status_code != 200:
-            logger.error(f"Overpass API returned {resp.status_code}")
+        data = resp.json()
+        if data.get('status') not in ('OK', 'ZERO_RESULTS'):
+            logger.warning(f"Places legacy failed: {data.get('status')} - {data.get('error_message','')}")
             return None
 
-        osm_data = resp.json()
         results = []
-        for el in osm_data.get('elements', []):
-            tags = el.get('tags', {})
-            plat = el.get('lat') or el.get('center', {}).get('lat', 0)
-            plng = el.get('lon') or el.get('center', {}).get('lon', 0)
+        for place in data.get('results', []):
+            loc = place.get('geometry', {}).get('location', {})
+            plat, plng_ = loc.get('lat', 0), loc.get('lng', 0)
+            dist_km = _haversine(lat, lng, plat, plng_)
+            results.append({
+                'name': place.get('name', ''),
+                'address': place.get('vicinity', ''),
+                'rating': place.get('rating'),
+                'total_ratings': place.get('user_ratings_total', 0),
+                'distance_km': round(dist_km, 1),
+                'open_now': place.get('opening_hours', {}).get('open_now'),
+                'phone': '',
+                'phone_intl': '',
+                'maps_url': f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id','')}",
+                'website': '',
+                'hours_today': '',
+                'source': 'google',
+            })
+        results.sort(key=lambda x: x['distance_km'])
+        logger.info(f"Google Places (legacy): {len(results)} vets within {radius_km}km")
+        return jsonify({'vets': results, 'count': len(results)})
+    except Exception as e:
+        logger.warning(f"Places legacy exception: {e}")
+        return None
+
+
+def _search_osm_nominatim(lat, lng, radius_m):
+    """Fallback: find vets via OpenStreetMap Nominatim search (no API key needed)."""
+    delta = radius_m / 111000.0
+    try:
+        resp = http_requests.get(
+            'https://nominatim.openstreetmap.org/search',
+            params={
+                'format': 'json',
+                'q': 'veterinary clinic',
+                'viewbox': f'{lng - delta},{lat + delta},{lng + delta},{lat - delta}',
+                'bounded': 1,
+                'limit': 10,
+                'addressdetails': 1,
+                'extratags': 1,
+            },
+            headers={'User-Agent': 'PetCare-Triage-POC/1.0'},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.error(f"Nominatim search returned {resp.status_code}")
+            return None
+
+        data = resp.json()
+        results = []
+        for place in data:
+            plat = float(place.get('lat', 0))
+            plng = float(place.get('lon', 0))
             dist_km = _haversine(lat, lng, plat, plng)
-            name = tags.get('name', 'Veterinary Clinic')
+            name = place.get('display_name', '').split(',')[0] or 'Veterinary Clinic'
+            addr = place.get('address', {})
+            extra = place.get('extratags') or {}
+
+            address_parts = []
+            for k in ('house_number', 'road', 'city', 'town', 'village',
+                       'state', 'postcode'):
+                v = addr.get(k)
+                if v:
+                    address_parts.append(v)
 
             results.append({
                 'name': name,
-                'address': _build_osm_address(tags),
+                'address': ', '.join(address_parts),
                 'rating': None,
                 'total_ratings': 0,
                 'distance_km': round(dist_km, 1),
                 'open_now': None,
-                'phone': tags.get('phone', tags.get('contact:phone', '')),
+                'phone': extra.get('phone', extra.get('contact:phone', '')),
                 'phone_intl': '',
                 'maps_url': f"https://www.openstreetmap.org/?mlat={plat}&mlon={plng}#map=17/{plat}/{plng}",
-                'website': tags.get('website', tags.get('contact:website', '')),
-                'hours_today': tags.get('opening_hours', ''),
+                'website': extra.get('website', extra.get('contact:website', '')),
+                'hours_today': extra.get('opening_hours', ''),
                 'source': 'openstreetmap',
             })
 
         results.sort(key=lambda x: x['distance_km'])
-        logger.info(f"Overpass: found {len(results)} vets within {radius_m}m")
+        logger.info(f"Nominatim: found {len(results)} vets within {radius_m}m")
         return jsonify({'vets': results, 'count': len(results)})
 
     except Exception as e:
-        logger.error(f"Overpass search failed: {e}")
+        logger.error(f"Nominatim search failed: {e}")
         return None
 
 
