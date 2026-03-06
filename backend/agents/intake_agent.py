@@ -29,6 +29,10 @@ class IntakeAgent:
         'dog', 'cat', 'bird', 'rabbit', 'hamster', 'reptile', 'fish',
         'parrot', 'puppy', 'kitten', 'bunny', 'turtle', 'snake', 'lizard',
         'guinea pig', 'gerbil', 'ferret', 'pet', 'animal',
+        'chicken', 'rooster', 'hen', 'duck', 'goose', 'turkey', 'pigeon',
+        'horse', 'pony', 'goat', 'sheep', 'pig', 'cow', 'calf',
+        'hedgehog', 'chinchilla', 'rat', 'mouse', 'frog', 'toad',
+        'cockatiel', 'budgie', 'canary', 'macaw', 'cockatoo', 'finch',
     }
     _NOISE_PHRASES = {
         'i have a', 'i got a', 'my pet is', 'we have a', 'it is a',
@@ -77,6 +81,7 @@ HARD RULES — never violate:
 2. NEVER suggest medications or dosages
 3. NEVER say "your pet has", "this sounds like", "this could be"
 4. ONLY collect: species, symptoms as described, duration, eating/drinking, energy level
+   ANY animal is a valid species — dogs, cats, birds, chickens, roosters, horses, reptiles, fish, farm animals, exotic pets, etc.
 5. Do NOT comment on urgency at all
 6. Respond in {lang_name}. JSON keys must stay in English.
 7. Respond ONLY with valid JSON. No markdown fences. No text outside the JSON.

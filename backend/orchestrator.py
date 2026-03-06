@@ -149,11 +149,22 @@ class Orchestrator:
                         'katze', 'kätzchen',
                         'gatto', 'gattino'],
                 'bird': ['bird', 'birds', 'parrot', 'parakeet', 'budgie',
-                         'cockatiel', 'canary', 'finch', 'macaw', 'cockatoo'],
+                         'cockatiel', 'canary', 'finch', 'macaw', 'cockatoo',
+                         'chicken', 'chickens', 'rooster', 'hen', 'duck',
+                         'ducks', 'goose', 'geese', 'turkey', 'pigeon',
+                         'dove', 'lovebird', 'conure', 'african grey'],
                 'rabbit': ['rabbit', 'rabbits', 'bunny', 'bunnies', 'hare'],
                 'hamster': ['hamster', 'hamsters', 'gerbil', 'guinea pig'],
                 'reptile': ['reptile', 'lizard', 'gecko', 'iguana', 'snake',
-                            'turtle', 'tortoise', 'bearded dragon'],
+                            'turtle', 'tortoise', 'bearded dragon', 'chameleon'],
+                'horse': ['horse', 'horses', 'pony', 'ponies', 'foal',
+                          'mare', 'stallion', 'colt', 'filly'],
+                'fish': ['fish', 'goldfish', 'betta', 'guppy', 'koi',
+                         'aquarium fish', 'tropical fish'],
+                'other': ['hedgehog', 'chinchilla', 'rat', 'rats',
+                          'mouse', 'mice', 'ferret', 'ferrets',
+                          'frog', 'toad', 'goat', 'sheep', 'pig',
+                          'piglet', 'cow', 'calf', 'lamb'],
             }
             # Build search text from user message + all prior user messages
             all_user_text = user_message.lower()
@@ -162,15 +173,23 @@ class Orchestrator:
                     all_user_text += ' ' + str(msg.get('content', '')).lower()
 
             detected_species = None
+            matched_keyword = None
             for species_name, keywords in _species_keywords.items():
-                if any(kw in all_user_text for kw in keywords):
-                    detected_species = species_name
+                for kw in keywords:
+                    if kw in all_user_text:
+                        detected_species = species_name
+                        matched_keyword = kw
+                        break
+                if detected_species:
                     break
 
             if detected_species:
-                intake_out['species'] = detected_species
-                self.session.setdefault('pet_profile', {})['species'] = detected_species
-                intake_out.setdefault('pet_profile', {})['species'] = detected_species
+                final_name = matched_keyword if matched_keyword not in (
+                    'bird', 'birds', 'reptile', 'other'
+                ) else detected_species
+                intake_out['species'] = final_name
+                self.session.setdefault('pet_profile', {})['species'] = final_name
+                intake_out.setdefault('pet_profile', {})['species'] = final_name
 
         species_val = intake_out.get('species') or session_profile.get('species', '')
         has_species = bool(species_val)
