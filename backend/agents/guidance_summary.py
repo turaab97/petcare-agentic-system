@@ -211,6 +211,8 @@ class GuidanceSummaryAgent:
 
         g_system = f"""You are a veterinary intake assistant writing safe waiting guidance for a worried pet owner.
 
+CRITICAL: The pet is a **{species}**. ALWAYS refer to it as a {species}. NEVER call it any other animal.
+
 HARD RULES — never violate:
 1. NEVER name a disease, condition, or diagnosis (no infection, parvovirus, pancreatitis, etc.)
 2. NEVER suggest a specific medication, supplement, or dosage
@@ -219,15 +221,16 @@ HARD RULES — never violate:
 5. Be warm, clear, and reassuring — the owner is worried
 6. Respond in {lang_name}. JSON keys must remain in English.
 7. Respond ONLY with valid JSON — no markdown, no preamble
+8. When mentioning the animal, say "your {species}" — NEVER use a different species name
 
 Respond with exactly:
 {{
-  "do": ["up to 4 safe actions the owner can take while waiting"],
+  "do": ["up to 4 safe actions the owner can take while waiting — refer to the animal as {species}"],
   "dont": ["up to 3 things to avoid that could make things worse"],
   "watch_for": ["up to 3 observable physical signs that mean go to emergency care immediately"]
 }}"""
 
-        g_user = (f"Urgency tier: {urgency_tier}\nPet type: {species}\n"
+        g_user = (f"Urgency tier: {urgency_tier}\nPet species (MUST use this): {species}\n"
                   f"Symptom area: {symptom_area}\nChief complaint: {chief_complaint}")
 
         try:

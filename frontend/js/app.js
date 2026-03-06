@@ -1145,6 +1145,10 @@ async function downloadSummary() {
     try {
         const res = await fetch(`/api/session/${sessionId}/export`);
         if (!res.ok) {
+            if (res.status === 404) {
+                addMessage('Session expired — please complete a new triage to download a summary.', 'assistant');
+                return;
+            }
             const err = await res.json();
             addMessage(`Could not generate PDF: ${err.error || 'Unknown error'}`, 'assistant');
             return;
