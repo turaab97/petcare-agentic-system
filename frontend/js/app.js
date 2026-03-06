@@ -569,7 +569,7 @@ const LANGUAGES = {
  * Get translated string for current language
  */
 function t(key, replacements = {}) {
-    const lang = LANGUAGES[currentLanguage] || LANGUAGES.en;
+    const lang = LANGUAGES[currentLang] || LANGUAGES.en;
     let text = lang.ui[key] || LANGUAGES.en.ui[key] || key;
     
     // Replace placeholders like {breed}
@@ -624,7 +624,7 @@ document.addEventListener('DOMContentLoaded', initApp);
  * detects language from URL params or browser settings,
  * checks voice support, and starts a new intake session.
  */
-const APP_VERSION = '2026.03.06c';
+const APP_VERSION = '2026.03.06d';
 
 async function initApp() {
     console.log(`PetCare v${APP_VERSION} loaded`);
@@ -943,17 +943,19 @@ async function sendMessage(source = 'text') {
                 _savePetProfile(sumData.pet_profile);
                 _saveSymptomHistory(sumData);
             } catch (err) {
-                console.error('Could not fetch clinic summary:', err);
+                console.error('Clinic summary error:', err);
             }
-            _showActionButtons();
-            const urgencyTier = _detectUrgencyTier(data.message);
-            _showCostEstimate(urgencyTier);
-            _showFeedbackPrompt();
+            try { _showActionButtons(); } catch (e) { console.error('Action buttons error:', e); }
+            try {
+                const urgencyTier = _detectUrgencyTier(data.message);
+                _showCostEstimate(urgencyTier);
+            } catch (e) { console.error('Cost estimate error:', e); }
+            try { _showFeedbackPrompt(); } catch (e) { console.error('Feedback error:', e); }
         }
 
         if (data.state === 'booked') {
-            _showActionButtons();
-            _showReminderPrompt();
+            try { _showActionButtons(); } catch (e) { console.error('Action buttons error:', e); }
+            try { _showReminderPrompt(); } catch (e) { console.error('Reminder error:', e); }
         }
 
     } catch (err) {
@@ -1354,7 +1356,7 @@ function _showActionButtons() {
     const div = document.createElement('div');
     div.id = 'action-buttons';
     div.className = 'action-buttons';
-    const lang = LANGUAGES[currentLanguage] || LANGUAGES.en;
+    const lang = LANGUAGES[currentLang] || LANGUAGES.en;
     div.innerHTML = `
         <button onclick="findNearbyVets()" class="action-btn vet-finder-btn">
             ${lang.ui.findNearbyVets}
@@ -1497,13 +1499,13 @@ function _showLocationFallback(code, message) {
  * Find vets by city/postal code (manual entry)
  */
 async function _findVetsByCity() {
-    const promptText = currentLanguage === 'en' ? 'Enter your city or postal code:' :
-                      currentLanguage === 'fr' ? 'Entrez votre ville ou code postal :' :
-                      currentLanguage === 'es' ? 'Ingrese su ciudad o código postal:' :
-                      currentLanguage === 'zh' ? '请输入您的城市或邮政编码：' :
-                      currentLanguage === 'hi' ? 'अपना शहर या पिन कोड दर्ज करें:' :
-                      currentLanguage === 'ar' ? 'أدخل مدينتك أو الرمز البريدي:' :
-                      currentLanguage === 'ur' ? 'اپنا شہر یا پوسٹل کوڈ درج کریں:' : 'Enter your city or postal code:';
+    const promptText = currentLang === 'en' ? 'Enter your city or postal code:' :
+                      currentLang === 'fr' ? 'Entrez votre ville ou code postal :' :
+                      currentLang === 'es' ? 'Ingrese su ciudad o código postal:' :
+                      currentLang === 'zh' ? '请输入您的城市或邮政编码：' :
+                      currentLang === 'hi' ? 'अपना शहर या पिन कोड दर्ज करें:' :
+                      currentLang === 'ar' ? 'أدخل مدينتك أو الرمز البريدي:' :
+                      currentLang === 'ur' ? 'اپنا شہر یا پوسٹل کوڈ درج کریں:' : 'Enter your city or postal code:';
     const city = prompt(promptText);
     if (!city) return;
 
@@ -1544,13 +1546,13 @@ async function _findVetsByCity() {
         _renderVetResults(data.vets);
     } catch (err) {
         removeTypingIndicator();
-        const errorMsg = currentLanguage === 'en' ? '❌ Error searching for location. Please try again.' :
-                        currentLanguage === 'fr' ? '❌ Erreur lors de la recherche de localisation. Veuillez réessayer.' :
-                        currentLanguage === 'es' ? '❌ Error al buscar la ubicación. Inténtelo de nuevo.' :
-                        currentLanguage === 'zh' ? '❌ 搜索位置时出错。请重试。' :
-                        currentLanguage === 'hi' ? '❌ स्थान खोजने में त्रुटि। कृपया पुनः प्रयास करें।' :
-                        currentLanguage === 'ar' ? '❌ خطأ في البحث عن الموقع. يرجى المحاولة مرة أخرى.' :
-                        currentLanguage === 'ur' ? '❌ مقام تلاش کرنے میں خرابی۔ براہ کرم دوبارہ کوشش کریں۔' : '❌ Error searching for location. Please try again.';
+        const errorMsg = currentLang === 'en' ? '❌ Error searching for location. Please try again.' :
+                        currentLang === 'fr' ? '❌ Erreur lors de la recherche de localisation. Veuillez réessayer.' :
+                        currentLang === 'es' ? '❌ Error al buscar la ubicación. Inténtelo de nuevo.' :
+                        currentLang === 'zh' ? '❌ 搜索位置时出错。请重试。' :
+                        currentLang === 'hi' ? '❌ स्थान खोजने में त्रुटि। कृपया पुनः प्रयास करें।' :
+                        currentLang === 'ar' ? '❌ خطأ في البحث عن الموقع. يرجى المحاولة مرة أخرى.' :
+                        currentLang === 'ur' ? '❌ مقام تلاش کرنے میں خرابی۔ براہ کرم دوبارہ کوشش کریں۔' : '❌ Error searching for location. Please try again.';
         addMessage(errorMsg, 'assistant');
         console.error('City search error:', err);
     }
@@ -1560,13 +1562,13 @@ async function _findVetsByCity() {
  * Find vets using a default location (Toronto)
  */
 async function _findVetsDefaultLocation() {
-    const defaultMsg = currentLanguage === 'en' ? '📍 Using default location (Toronto, ON) to show nearby vets...' :
-                      currentLanguage === 'fr' ? '📍 Utilisation de la localisation par défaut (Toronto) pour afficher les vétérinaires...' :
-                      currentLanguage === 'es' ? '📍 Usando ubicación predeterminada (Toronto) para mostrar veterinarios...' :
-                      currentLanguage === 'zh' ? '📍 使用默认位置（多伦多）显示附近的兽医...' :
-                      currentLanguage === 'hi' ? '📍 डिफ़ॉल्ट स्थान (टोरंटो) का उपयोग करके पास के पशु चिकित्सक दिखा रहे हैं...' :
-                      currentLanguage === 'ar' ? '📍 استخدام الموقع الافتراضي (تورنتو) لعرض الأطباء البيطريين...' :
-                      currentLanguage === 'ur' ? '📍 ڈیفالٹ مقام (ٹورنٹو) استعمال کرکے قریب کے ویٹرنری ڈاکٹر دکھا رہے ہیں...' : '📍 Using default location (Toronto, ON) to show nearby vets...';
+    const defaultMsg = currentLang === 'en' ? '📍 Using default location (Toronto, ON) to show nearby vets...' :
+                      currentLang === 'fr' ? '📍 Utilisation de la localisation par défaut (Toronto) pour afficher les vétérinaires...' :
+                      currentLang === 'es' ? '📍 Usando ubicación predeterminada (Toronto) para mostrar veterinarios...' :
+                      currentLang === 'zh' ? '📍 使用默认位置（多伦多）显示附近的兽医...' :
+                      currentLang === 'hi' ? '📍 डिफ़ॉल्ट स्थान (टोरंटो) का उपयोग करके पास के पशु चिकित्सक दिखा रहे हैं...' :
+                      currentLang === 'ar' ? '📍 استخدام الموقع الافتراضي (تورنتو) لعرض الأطباء البيطريين...' :
+                      currentLang === 'ur' ? '📍 ڈیفالٹ مقام (ٹورنٹو) استعمال کرکے قریب کے ویٹرنری ڈاکٹر دکھا رہے ہیں...' : '📍 Using default location (Toronto, ON) to show nearby vets...';
     addMessage(defaultMsg, 'assistant');
     showTypingIndicator();
 
@@ -1602,13 +1604,13 @@ async function _findVetsDefaultLocation() {
         _renderVetResults(data.vets);
     } catch (err) {
         removeTypingIndicator();
-        const errorMsg = currentLanguage === 'en' ? '❌ Could not load vet finder. Please try again later.' :
-                        currentLanguage === 'fr' ? '❌ Impossible de charger le recherche. Veuillez réessayer.' :
-                        currentLanguage === 'es' ? '❌ No se pudo cargar el buscador. Inténtelo de nuevo.' :
-                        currentLanguage === 'zh' ? '❌ 无法加载兽医查找器。请稍后重试。' :
-                        currentLanguage === 'hi' ? '❌ वेट फाइंडर लोड नहीं हो सका। कृपया बाद में पुनः प्रयास करें।' :
-                        currentLanguage === 'ar' ? '❌ تعذر تحميل الباحث. يرجى المحاولة لاحقاً.' :
-                        currentLanguage === 'ur' ? '❌ ویٹ فائنڈر لوڈ نہیں ہو سکا۔ براہ کرم بعد میں دوبارہ کوشش کریں۔' : '❌ Could not load vet finder. Please try again later.';
+        const errorMsg = currentLang === 'en' ? '❌ Could not load vet finder. Please try again later.' :
+                        currentLang === 'fr' ? '❌ Impossible de charger le recherche. Veuillez réessayer.' :
+                        currentLang === 'es' ? '❌ No se pudo cargar el buscador. Inténtelo de nuevo.' :
+                        currentLang === 'zh' ? '❌ 无法加载兽医查找器。请稍后重试。' :
+                        currentLang === 'hi' ? '❌ वेट फाइंडर लोड नहीं हो सका। कृपया बाद में पुनः प्रयास करें।' :
+                        currentLang === 'ar' ? '❌ تعذر تحميل الباحث. يرجى المحاولة لاحقاً.' :
+                        currentLang === 'ur' ? '❌ ویٹ فائنڈر لوڈ نہیں ہو سکا۔ براہ کرم بعد میں دوبارہ کوشش کریں۔' : '❌ Could not load vet finder. Please try again later.';
         addMessage(errorMsg, 'assistant');
         console.error('Default location error:', err);
     }
@@ -1620,21 +1622,21 @@ function _renderVetResults(vets) {
     wrapper.className = 'message assistant vet-results';
 
     // Translations for vet card elements
-    const kmAway = currentLanguage === 'en' ? 'km away' :
-                  currentLanguage === 'fr' ? 'km' :
-                  currentLanguage === 'es' ? 'km de distancia' :
-                  currentLanguage === 'zh' ? '公里远' :
-                  currentLanguage === 'hi' ? 'किमी दूर' :
-                  currentLanguage === 'ar' ? 'كم' :
-                  currentLanguage === 'ur' ? 'کلومیٹر دور' : 'km away';
+    const kmAway = currentLang === 'en' ? 'km away' :
+                  currentLang === 'fr' ? 'km' :
+                  currentLang === 'es' ? 'km de distancia' :
+                  currentLang === 'zh' ? '公里远' :
+                  currentLang === 'hi' ? 'किमी दूर' :
+                  currentLang === 'ar' ? 'كم' :
+                  currentLang === 'ur' ? 'کلومیٹر دور' : 'km away';
     
-    const reviewsText = currentLanguage === 'en' ? 'reviews' :
-                       currentLanguage === 'fr' ? 'avis' :
-                       currentLanguage === 'es' ? 'reseñas' :
-                       currentLanguage === 'zh' ? '评论' :
-                       currentLanguage === 'hi' ? 'समीक्षाएं' :
-                       currentLanguage === 'ar' ? 'تقييمات' :
-                       currentLanguage === 'ur' ? 'جائزے' : 'reviews';
+    const reviewsText = currentLang === 'en' ? 'reviews' :
+                       currentLang === 'fr' ? 'avis' :
+                       currentLang === 'es' ? 'reseñas' :
+                       currentLang === 'zh' ? '评论' :
+                       currentLang === 'hi' ? 'समीक्षाएं' :
+                       currentLang === 'ar' ? 'تقييمات' :
+                       currentLang === 'ur' ? 'جائزے' : 'reviews';
 
     let html = `<div class="vet-results-header">${t('nearbyVetsHeader')}</div>`;
     html += '<div class="vet-cards">';
@@ -1642,26 +1644,26 @@ function _renderVetResults(vets) {
     for (const vet of vets.slice(0, 5)) {
         const stars = vet.rating ? '⭐'.repeat(Math.round(vet.rating)) : '';
         const ratingText = vet.rating ? `${vet.rating}/5 (${vet.total_ratings} ${reviewsText})` : 
-                           currentLanguage === 'en' ? 'No ratings' :
-                           currentLanguage === 'fr' ? 'Pas d\'avis' :
-                           currentLanguage === 'es' ? 'Sin reseñas' :
-                           currentLanguage === 'zh' ? '无评分' :
-                           currentLanguage === 'hi' ? 'कोई रेटिंग नहीं' :
-                           currentLanguage === 'ar' ? 'لا تقييمات' :
-                           currentLanguage === 'ur' ? 'کوئی درجہ بندی نہیں' : 'No ratings';
+                           currentLang === 'en' ? 'No ratings' :
+                           currentLang === 'fr' ? 'Pas d\'avis' :
+                           currentLang === 'es' ? 'Sin reseñas' :
+                           currentLang === 'zh' ? '无评分' :
+                           currentLang === 'hi' ? 'कोई रेटिंग नहीं' :
+                           currentLang === 'ar' ? 'لا تقييمات' :
+                           currentLang === 'ur' ? 'کوئی درجہ بندی نہیں' : 'No ratings';
         const statusClass = vet.open_now ? 'open' : 'closed';
         const statusText = vet.open_now === true ? t('openNow') : vet.open_now === false ? t('closed') : '';
         const mapsLink = vet.maps_url
             ? `<a href="${vet.maps_url}" target="_blank" rel="noopener" class="vet-directions-btn">${t('getDirections')}</a>`
             : '';
 
-        const callText = currentLanguage === 'en' ? 'Call' :
-                         currentLanguage === 'fr' ? 'Appeler' :
-                         currentLanguage === 'es' ? 'Llamar' :
-                         currentLanguage === 'zh' ? '致电' :
-                         currentLanguage === 'hi' ? 'कॉल करें' :
-                         currentLanguage === 'ar' ? 'اتصل' :
-                         currentLanguage === 'ur' ? 'کال کریں' : 'Call';
+        const callText = currentLang === 'en' ? 'Call' :
+                         currentLang === 'fr' ? 'Appeler' :
+                         currentLang === 'es' ? 'Llamar' :
+                         currentLang === 'zh' ? '致电' :
+                         currentLang === 'hi' ? 'कॉल करें' :
+                         currentLang === 'ar' ? 'اتصل' :
+                         currentLang === 'ur' ? 'کال کریں' : 'Call';
         const callBtn = vet.phone
             ? `<a href="tel:${_escapeHtml(vet.phone)}" class="vet-call-btn">📞 ${callText} ${_escapeHtml(vet.phone)}</a>`
             : `<span class="vet-no-phone">${t('noPhone')}</span>`;
@@ -1797,7 +1799,7 @@ async function handlePhotoUpload(input) {
         const container = document.getElementById('chat-messages');
         const div = document.createElement('div');
         div.className = 'message user photo-message';
-        div.innerHTML = `<img src="${e.target.result}" alt="${currentLanguage === 'en' ? 'Uploaded photo' : t('photoUploaded').replace('📷 ', '')}" class="photo-preview">
+        div.innerHTML = `<img src="${e.target.result}" alt="${currentLang === 'en' ? 'Uploaded photo' : t('photoUploaded').replace('📷 ', '')}" class="photo-preview">
                          <span>${t('photoUploaded')}</span>`;
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
@@ -1994,16 +1996,13 @@ function _showClinicPanel(sumData) {
     const fieldsCapt = metrics.required_fields_captured_pct != null
         ? metrics.required_fields_captured_pct + '%' : '—';
 
-    // Safely encode the full JSON for clipboard copy
-    const jsonStr = JSON.stringify(sumData, null, 2).replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-
     const panel = document.createElement('div');
     panel.id = 'clinic-panel';
     panel.style.cssText = 'border:1px solid #d0d0d0;border-radius:8px;margin:16px 0;background:#fafafa;overflow:hidden;font-size:14px;line-height:1.5;';
     panel.innerHTML = `
         <div id="clinic-panel-header" style="background:#2c3e50;color:white;padding:10px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
              onclick="const b=document.getElementById('clinic-panel-body');b.style.display=b.style.display==='none'?'block':'none';">
-            <span>📋 <strong>Clinic Summary</strong> <span style="font-size:11px;opacity:0.75;font-weight:normal;">(staff view only — not shown to owner)</span></span>
+            <span>📋 <strong>Clinic Summary</strong> <span style="font-size:11px;opacity:0.75;font-weight:normal;">(staff view only)</span></span>
             <span style="font-size:11px;opacity:0.7">click to expand / collapse</span>
         </div>
         <div id="clinic-panel-body" style="padding:14px 16px;">
@@ -2026,11 +2025,17 @@ function _showClinicPanel(sumData) {
             ${slots ? `<p style="margin:6px 0 3px;color:#555;">Proposed slots:</p><ul style="margin:0 0 10px 18px;padding:0;">${slots}</ul>` : ''}
             <p style="margin:4px 0 6px;font-size:12px;color:#888;">⚠ Triage is a suggestion only. Clinic staff must review and confirm before acting.</p>
             <button id="clinic-copy-btn"
-                onclick="const j=\`${jsonStr}\`;navigator.clipboard.writeText(j).then(()=>{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='Copy full JSON',2000);}).catch(()=>this.textContent='Copy failed');"
                 style="padding:6px 16px;background:#2c3e50;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
                 Copy full JSON
             </button>
         </div>`;
+
+    panel.querySelector('#clinic-copy-btn').addEventListener('click', function() {
+        const json = JSON.stringify(sumData, null, 2);
+        navigator.clipboard.writeText(json)
+            .then(() => { this.textContent = '✓ Copied!'; setTimeout(() => this.textContent = 'Copy full JSON', 2000); })
+            .catch(() => { this.textContent = 'Copy failed'; });
+    });
 
     document.getElementById('chat-messages').appendChild(panel);
 }
@@ -2166,26 +2171,26 @@ function _showReminderPrompt() {
 
 function _setReminder(label, ms) {
     if (!('Notification' in window)) {
-        const notSupportedMsg = currentLanguage === 'en' ? 'Browser notifications are not supported.' :
-                               currentLanguage === 'fr' ? 'Les notifications du navigateur ne sont pas prises en charge.' :
-                               currentLanguage === 'es' ? 'Las notificaciones del navegador no están soportadas.' :
-                               currentLanguage === 'zh' ? '浏览器不支持通知。' :
-                               currentLanguage === 'hi' ? 'ब्राउज़र सूचनाएं समर्थित नहीं हैं।' :
-                               currentLanguage === 'ar' ? 'إشعارات المتصفح غير مدعومة.' :
-                               currentLanguage === 'ur' ? 'براؤزر نوٹیفیکیشنز معاونت یافتہ نہیں ہیں۔' : 'Browser notifications are not supported.';
+        const notSupportedMsg = currentLang === 'en' ? 'Browser notifications are not supported.' :
+                               currentLang === 'fr' ? 'Les notifications du navigateur ne sont pas prises en charge.' :
+                               currentLang === 'es' ? 'Las notificaciones del navegador no están soportadas.' :
+                               currentLang === 'zh' ? '浏览器不支持通知。' :
+                               currentLang === 'hi' ? 'ब्राउज़र सूचनाएं समर्थित नहीं हैं।' :
+                               currentLang === 'ar' ? 'إشعارات المتصفح غير مدعومة.' :
+                               currentLang === 'ur' ? 'براؤزر نوٹیفیکیشنز معاونت یافتہ نہیں ہیں۔' : 'Browser notifications are not supported.';
         addMessage(notSupportedMsg, 'assistant');
         return;
     }
 
     Notification.requestPermission().then(permission => {
         if (permission !== 'granted') {
-            const allowMsg = currentLanguage === 'en' ? 'Please allow notifications to set reminders.' :
-                             currentLanguage === 'fr' ? 'Veuillez autoriser les notifications pour définir des rappels.' :
-                             currentLanguage === 'es' ? 'Por favor permita notificaciones para establecer recordatorios.' :
-                             currentLanguage === 'zh' ? '请允许通知以设置提醒。' :
-                             currentLanguage === 'hi' ? 'रिमाइंडर सेट करने के लिए कृपया सूचनाएं अनुमत करें।' :
-                             currentLanguage === 'ar' ? 'يرجى السماح بالإشعارات لتعيين التذكيرات.' :
-                             currentLanguage === 'ur' ? 'یاد دہانیاں سیٹ کرنے کے لیے براہ کرم اطلاعات کی اجازت دیں۔' : 'Please allow notifications to set reminders.';
+            const allowMsg = currentLang === 'en' ? 'Please allow notifications to set reminders.' :
+                             currentLang === 'fr' ? 'Veuillez autoriser les notifications pour définir des rappels.' :
+                             currentLang === 'es' ? 'Por favor permita notificaciones para establecer recordatorios.' :
+                             currentLang === 'zh' ? '请允许通知以设置提醒。' :
+                             currentLang === 'hi' ? 'रिमाइंडर सेट करने के लिए कृपया सूचनाएं अनुमत करें।' :
+                             currentLang === 'ar' ? 'يرجى السماح بالإشعارات لتعيين التذكيرات.' :
+                             currentLang === 'ur' ? 'یاد دہانیاں سیٹ کرنے کے لیے براہ کرم اطلاعات کی اجازت دیں۔' : 'Please allow notifications to set reminders.';
             addMessage(allowMsg, 'assistant');
             return;
         }

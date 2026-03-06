@@ -66,6 +66,39 @@ class IntakeAgent:
         cleaned = text.strip(' .,;!?')
         return len(cleaned) >= 3
 
+    def _fallback_response(self, session: dict, user_message: str, known_species: str, known_complaint: str) -> dict:
+        """Return a graceful fallback when LLM fails or returns empty/invalid JSON."""
+        final_species = known_species or session.get('pet_profile', {}).get('species', '')
+        candidate = known_complaint or session.get('symptoms', {}).get('chief_complaint', '') or user_message
+
+        if self._is_real_complaint(candidate, final_species):
+            final_complaint = candidate
+            session.setdefault('symptoms', {})['chief_complaint'] = final_complaint
+        else:
+            final_complaint = ''
+
+        complete = bool(final_species and final_complaint)
+        fq = []
+        if not final_species:
+            fq = ['What type of pet do you have? (dog, cat, or other)']
+        elif not final_complaint:
+            fq = ['Thanks! What symptoms or concerns are you noticing with your pet?']
+
+        return {
+            'agent_name': self.agent_name,
+            'status': 'success',
+            'output': {
+                'pet_profile': session.get('pet_profile', {}),
+                'species': final_species,
+                'chief_complaint': final_complaint,
+                'symptom_details': {},
+                'follow_up_questions': fq,
+                'intake_complete': complete
+            },
+            'confidence': 0.5,
+            'warnings': ['Used fallback extraction due to LLM response issue']
+        }
+
     def process(self, session: dict, user_message: str) -> dict:
         """
         Extract structured intake data from the owner message via LLM.
@@ -162,7 +195,15 @@ dermatological, injury, urinary, neurological, behavioral, or empty string."""
                         break
             raw = raw.strip()
 
-            parsed = json.loads(raw)
+            if not raw:
+                logger.warning('Intake LLM returned empty response, using fallback')
+                return self._fallback_response(session, user_message, known_species, known_complaint)
+
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as e:
+                logger.warning(f'Intake LLM returned invalid JSON: {e}, raw={raw[:100]}...')
+                return self._fallback_response(session, user_message, known_species, known_complaint)
 
             pet_profile = parsed.get('pet_profile', {})
             symptom_details = parsed.get('symptom_details', {})
