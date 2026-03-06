@@ -43,4 +43,4 @@ ENV PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen(f'http://localhost:{__import__(\"os\").getenv(\"PORT\",\"5002\")}/api/health')" || exit 1
 
-CMD sh -c "gunicorn --bind 0.0.0.0:${PORT:-5002} --workers 2 --timeout 120 backend.api_server:app"
+CMD sh -c "gunicorn --bind 0.0.0.0:${PORT:-5002} --workers 1 --threads 4 --timeout 120 backend.api_server:app"

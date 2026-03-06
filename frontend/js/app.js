@@ -878,8 +878,10 @@ async function sendMessage(source = 'text') {
         if (!res.ok) {
             removeTypingIndicator();
             if (res.status === 404) {
-                addMessage('Session expired. Starting a fresh session...', 'assistant');
+                addMessage('Session expired. Reconnecting...', 'assistant');
                 await startSession();
+                input.value = message;
+                await sendMessage(source);
                 return;
             }
             addMessage(t('sendError'), 'assistant');
