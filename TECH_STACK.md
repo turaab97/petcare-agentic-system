@@ -186,6 +186,98 @@ The build is **deterministic**: same code + same requirements.txt = same image e
 
 ---
 
+## Frontend Architecture
+
+The frontend is a **single-page application** built entirely with vanilla HTML5, CSS3, and JavaScript (ES6+) — no React, no Vue, no build tools. Flask serves the static files directly. This was a deliberate choice: zero build complexity, instant iteration, and no framework lock-in.
+
+### File Structure
+
+```
+frontend/
+├── index.html          # Single HTML page — chat UI, header, modals, onboarding
+├── js/
+│   └── app.js          # All client-side logic (~2,500 lines)
+├── styles/
+│   └── main.css        # All styling (~1,200 lines) — theme, dark mode, RTL
+├── manifest.json       # PWA web app manifest
+├── sw.js               # Service worker for offline/PWA support
+└── icons/
+    ├── icon-192.png    # PWA icon (192×192)
+    └── icon-512.png    # PWA icon (512×512)
+```
+
+### Design System
+
+| Element | Implementation | Details |
+|---------|---------------|---------|
+| **Color palette** | CSS custom properties (`--primary: #0d9488`) | Warm teal/emerald — veterinary-appropriate, distinct from generic blue tech |
+| **Typography** | [Inter](https://fonts.google.com/specimen/Inter) via Google Fonts | Clean, professional, highly legible at all sizes |
+| **Header** | CSS gradient (`#0f766e → #0d9488`) | Branded paw logo with faint watermark backdrop |
+| **Chat bubbles** | Flexbox layout with directional alignment | User = right-aligned teal; Assistant = left-aligned with paw avatar circle |
+| **Send button** | Circular button with inline SVG arrow | Replaces text "Send" — feels like a modern messaging app |
+| **Background** | Subtle radial-dot pattern via CSS `radial-gradient` | Adds visual depth without distracting from content |
+| **Cards** | Consistent styling for cost, feedback, reminders, breed risk | Rounded corners, soft shadows, teal accent borders |
+| **Dark mode** | CSS variables swap via `.dark-mode` class | Warm tones (`#1a2332` bg, `#e2e8f0` text) — not cold blue-black |
+| **RTL support** | `dir="rtl"` set dynamically via JS | Arabic and Urdu flip entire layout (bubbles, input, header) |
+| **Scrollbar** | Custom WebKit scrollbar styling | Thin, teal-tinted, matches theme |
+
+### JavaScript Architecture (`app.js`)
+
+All frontend logic lives in a single `app.js` file organized into logical sections:
+
+| Section | Functions | What It Does |
+|---------|-----------|-------------|
+| **Core Chat** | `sendMessage()`, `addMessage()`, `_streamText()` | Message send/receive, character-by-character streaming display |
+| **Voice** | `toggleVoice()`, `startListening()`, `speakResponse()` | 3-tier voice: Browser Speech API → Whisper/TTS → (Realtime stretch) |
+| **Internationalization** | `t()`, `setLanguage()`, `LANGUAGES{}` | Translation helper function + full UI string sets for 7 languages |
+| **Vet Finder** | `findNearbyVets()`, `_showLocationFallback()`, `_findVetsByCity()` | Google Places API + geolocation + manual city fallback + default location |
+| **Photo Upload** | `uploadPhoto()` | Camera/file upload → OpenAI Vision → observation (never diagnosis) |
+| **PDF Export** | `downloadSummary()` | Fetch PDF from backend, handle session expiry gracefully |
+| **Pet Profiles** | `loadPetProfile()`, `savePetProfile()` | localStorage persistence across sessions |
+| **Symptom History** | `loadHistory()`, `saveToHistory()` | Track past triages in localStorage |
+| **Cost Estimator** | `_showCostEstimate()` | Post-triage visit cost ranges by urgency tier |
+| **Feedback** | `_showFeedbackPrompt()`, `_submitFeedback()` | 1-5 star rating + optional comment |
+| **Reminders** | `_showReminderPrompt()`, `_setReminder()` | Browser Notification API for follow-up reminders |
+| **Breed Risks** | `_checkBreedRisks()` | Health risk alerts for 11+ known breeds |
+| **Dark Mode** | `toggleDarkMode()` | Toggle via header button, persisted in localStorage |
+| **Onboarding** | `checkOnboarding()`, `nextOnboardingStep()` | Animated 3-step walkthrough for first-time users |
+| **Transcript** | `downloadTranscript()` | Export full chat conversation as `.txt` file |
+| **Consent** | `showConsentBanner()` | PIPEDA/PHIPA-style privacy banner on first load |
+| **PWA** | Service worker registration | Installable on mobile, offline chat history |
+
+### How the Frontend Communicates with the Backend
+
+```
+Browser (app.js)
+    │
+    ├── POST /api/session/start          → Create session, get welcome message
+    ├── POST /api/session/{id}/message   → Send user message, get agent response
+    ├── GET  /api/session/{id}/summary   → Fetch triage summary (JSON)
+    ├── GET  /api/session/{id}/export    → Download PDF summary
+    ├── POST /api/session/{id}/photo     → Upload photo for Vision analysis
+    ├── POST /api/nearby-vets            → Search nearby vet clinics
+    ├── POST /api/voice/transcribe       → Send audio → get text (Whisper)
+    ├── POST /api/voice/synthesize       → Send text → get audio (TTS)
+    └── GET  /api/health                 → Health check
+```
+
+All API calls use `fetch()` with JSON payloads. The session ID is stored in a JavaScript variable and passed with every request. There is no client-side routing — it's a single-page chat interface.
+
+### Why No Framework?
+
+| Factor | Framework (React/Vue) | Vanilla JS (our approach) |
+|--------|----------------------|--------------------------|
+| **Build tooling** | Webpack/Vite/Next required | Zero — just files served by Flask |
+| **Bundle size** | 50-200KB+ | 0KB framework overhead |
+| **Deployment** | Separate build step | Flask serves files directly |
+| **Learning curve** | Team must know React/Vue | Standard JS + DOM APIs |
+| **Iteration speed** | Fast with hot reload | Instant — edit and refresh |
+| **Sufficient for POC?** | Overkill | Yes — single-page chat app |
+
+For a chat-based POC with one page and one interaction flow, vanilla JS is the right tool. If this moved to production with multiple pages and complex state, migrating to React/Next would be warranted.
+
+---
+
 ## AI / LLM Layer
 
 | Component | Technology | Pricing | Used By |
