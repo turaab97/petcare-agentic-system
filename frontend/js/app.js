@@ -1193,12 +1193,18 @@ function _typeMessage(element, html, speed = 15) {
     revealNext();
 }
 
-function _formatMessage(text) {
-    if (!text) return '';
-    let html = String(text)
+function _escapeHtml(str) {
+    return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function _formatMessage(text) {
+    if (!text) return '';
+    let html = _escapeHtml(text);
 
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
@@ -1617,7 +1623,7 @@ function _renderVetResults(vets) {
                          currentLanguage === 'ar' ? 'اتصل' :
                          currentLanguage === 'ur' ? 'کال کریں' : 'Call';
         const callBtn = vet.phone
-            ? `<a href="tel:${vet.phone}" class="vet-call-btn">📞 ${callText} ${vet.phone}</a>`
+            ? `<a href="tel:${_escapeHtml(vet.phone)}" class="vet-call-btn">📞 ${callText} ${_escapeHtml(vet.phone)}</a>`
             : `<span class="vet-no-phone">${t('noPhone')}</span>`;
 
         const websiteLink = vet.website
@@ -1625,15 +1631,15 @@ function _renderVetResults(vets) {
             : '';
 
         const hoursInfo = vet.hours_today
-            ? `<div class="vet-hours">🕐 ${vet.hours_today}</div>`
+            ? `<div class="vet-hours">🕐 ${_escapeHtml(vet.hours_today)}</div>`
             : '';
 
         html += `
             <div class="vet-card">
                 <div class="vet-card-header">
                     <div>
-                        <div class="vet-name">${vet.name}</div>
-                        <div class="vet-address">${vet.address}</div>
+                        <div class="vet-name">${_escapeHtml(vet.name)}</div>
+                        <div class="vet-address">${_escapeHtml(vet.address)}</div>
                     </div>
                     ${statusText ? `<span class="vet-status-badge ${statusClass}">${statusText}</span>` : ''}
                 </div>
@@ -1908,10 +1914,10 @@ function _showSymptomHistory() {
             const color = urgencyColors[entry.urgency] || '#64748b';
             html += `
                 <div class="history-entry">
-                    <span class="history-date">${dateStr}</span>
-                    <span class="history-pet">${name}</span>
-                    <span class="history-complaint">${entry.chief_complaint}</span>
-                    <span class="history-urgency" style="color:${color}">${entry.urgency}</span>
+                    <span class="history-date">${_escapeHtml(dateStr)}</span>
+                    <span class="history-pet">${_escapeHtml(name)}</span>
+                    <span class="history-complaint">${_escapeHtml(entry.chief_complaint || '')}</span>
+                    <span class="history-urgency" style="color:${color}">${_escapeHtml(entry.urgency || '')}</span>
                 </div>`;
         }
         html += '</div>';
@@ -1940,7 +1946,7 @@ function _showClinicPanel(sumData) {
     const tierColor = { Emergency: '#c0392b', 'Same-day': '#e67e22', Soon: '#d4ac0d', Routine: '#27ae60' }[tier] || '#7f8c8d';
 
     const slots = (sched.proposed_slots || []).slice(0, 3)
-        .map(s => `<li style="margin:3px 0">${s.datetime || '—'} &nbsp;·&nbsp; ${s.provider || '—'}</li>`)
+        .map(s => `<li style="margin:3px 0">${_escapeHtml(s.datetime || '—')} &nbsp;·&nbsp; ${_escapeHtml(s.provider || '—')}</li>`)
         .join('');
 
     const factors = (triage.contributing_factors || []).join(', ') || '—';
@@ -1963,17 +1969,17 @@ function _showClinicPanel(sumData) {
         <div id="clinic-panel-body" style="padding:14px 16px;">
             <table style="width:100%;border-collapse:collapse;margin-bottom:10px;">
                 <tr><td style="padding:3px 8px 3px 0;color:#555;width:160px;">Pet</td>
-                    <td><strong>${pet.species || '—'}</strong>${pet.pet_name ? ' &nbsp;"' + pet.pet_name + '"' : ''}${pet.age ? ' &nbsp;· Age: ' + pet.age : ''}${pet.breed ? ' &nbsp;· ' + pet.breed : ''}</td></tr>
+                    <td><strong>${_escapeHtml(pet.species || '—')}</strong>${pet.pet_name ? ' &nbsp;"' + _escapeHtml(pet.pet_name) + '"' : ''}${pet.age ? ' &nbsp;· Age: ' + _escapeHtml(pet.age) : ''}${pet.breed ? ' &nbsp;· ' + _escapeHtml(pet.breed) : ''}</td></tr>
                 <tr><td style="padding:3px 8px 3px 0;color:#555;">Urgency</td>
-                    <td><span style="background:${tierColor};color:white;padding:2px 12px;border-radius:12px;font-weight:bold;font-size:13px;">${tier}</span></td></tr>
+                    <td><span style="background:${tierColor};color:white;padding:2px 12px;border-radius:12px;font-weight:bold;font-size:13px;">${_escapeHtml(tier)}</span></td></tr>
                 <tr><td style="padding:3px 8px 3px 0;color:#555;">Rationale</td>
-                    <td style="color:#333;">${triage.rationale || '—'}</td></tr>
+                    <td style="color:#333;">${_escapeHtml(triage.rationale || '—')}</td></tr>
                 <tr><td style="padding:3px 8px 3px 0;color:#555;">Key factors</td>
-                    <td style="color:#333;">${factors}</td></tr>
+                    <td style="color:#333;">${_escapeHtml(factors)}</td></tr>
                 <tr><td style="padding:3px 8px 3px 0;color:#555;">Appt type</td>
-                    <td>${routing.appointment_type || '—'}</td></tr>
+                    <td>${_escapeHtml(routing.appointment_type || '—')}</td></tr>
                 <tr><td style="padding:3px 8px 3px 0;color:#555;">Providers</td>
-                    <td>${providers}</td></tr>
+                    <td>${_escapeHtml(providers)}</td></tr>
                 <tr><td style="padding:3px 8px 3px 0;color:#555;">Fields captured</td>
                     <td>${fieldsCapt}</td></tr>
             </table>

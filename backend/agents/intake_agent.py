@@ -14,9 +14,19 @@ import openai
 
 logger = logging.getLogger('petcare.agents.intake')
 
+import re as _re
+
 REQUIRED_FIELDS = ['species', 'chief_complaint']
 OPTIONAL_FIELDS = ['pet_name', 'breed', 'age', 'weight',
                    'timeline', 'eating_drinking', 'energy_level']
+
+
+def _sanitize_for_prompt(value: str, max_len: int = 200) -> str:
+    """Strip control chars and limit length to prevent prompt injection."""
+    if not value:
+        return ''
+    cleaned = _re.sub(r'[\x00-\x1f\x7f]', ' ', str(value))
+    return cleaned.strip()[:max_len]
 
 
 class IntakeAgent:
@@ -71,8 +81,12 @@ class IntakeAgent:
         }
         lang_name = lang_names.get(lang_code, 'English')
 
-        known_species = session.get('pet_profile', {}).get('species', '')
-        known_complaint = session.get('symptoms', {}).get('chief_complaint', '')
+        known_species = _sanitize_for_prompt(
+            session.get('pet_profile', {}).get('species', ''), max_len=50
+        )
+        known_complaint = _sanitize_for_prompt(
+            session.get('symptoms', {}).get('chief_complaint', ''), max_len=200
+        )
 
         system_prompt = f"""You are a veterinary intake assistant collecting pet symptom information.
 

@@ -31,10 +31,19 @@ Output: Owner guidance dict + clinic summary JSON
 """
 
 import logging
+import re
 from datetime import datetime
 import os
 import json
 import openai
+
+
+def _sanitize_for_prompt(value: str, max_len: int = 200) -> str:
+    """Strip control chars and limit length to prevent prompt injection."""
+    if not value:
+        return ''
+    cleaned = re.sub(r'[\x00-\x1f\x7f]', ' ', str(value))
+    return cleaned.strip()[:max_len]
 
 # LLM for owner-facing do/dont/watch_for; fallback to templates on error. (Syed Ali Turab, Mar 4, 2026)
 logger = logging.getLogger('petcare.agents.guidance_summary')
@@ -190,9 +199,9 @@ class GuidanceSummaryAgent:
               - warnings (list): Any issues
         """
         # Determine the symptom area for area-specific guidance
-        symptom_area = (
-            session.get('symptoms', {}).get('area', '')
-        )
+        raw_area = session.get('symptoms', {}).get('area', '')
+        valid_areas = set(AREA_SPECIFIC_GUIDANCE.keys())
+        symptom_area = raw_area if raw_area in valid_areas else ''
         area_guidance = AREA_SPECIFIC_GUIDANCE.get(symptom_area, {})
 
         # ----- LLM-generated owner guidance (Syed Ali Turab, March 4, 2026) -----
@@ -206,8 +215,12 @@ class GuidanceSummaryAgent:
         lang_name = lang_names.get(lang_code, 'English')
         triage_out = all_agent_outputs.get('triage', {}).get('output', {})
         urgency_tier = triage_out.get('urgency_tier', 'Routine')
-        species = session.get('pet_profile', {}).get('species', 'pet')
-        chief_complaint = session.get('symptoms', {}).get('chief_complaint', '')
+        species = _sanitize_for_prompt(
+            session.get('pet_profile', {}).get('species', 'pet'), max_len=50
+        ) or 'pet'
+        chief_complaint = _sanitize_for_prompt(
+            session.get('symptoms', {}).get('chief_complaint', ''), max_len=200
+        )
 
         g_system = f"""You are a veterinary intake assistant writing safe waiting guidance for a worried pet owner.
 

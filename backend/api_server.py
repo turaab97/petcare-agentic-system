@@ -28,7 +28,9 @@ Endpoints:
 """
 
 import os
+import sys
 import io
+import re
 import json
 import uuid
 import logging
@@ -38,6 +40,10 @@ from datetime import datetime
 from functools import wraps
 import base64
 import time
+
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
 from flask import Flask, request, jsonify, send_from_directory, send_file, make_response
 import requests as http_requests
@@ -51,6 +57,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB upload limit
+
+MAX_MESSAGE_LENGTH = 5000
+MAX_SESSIONS = 10000
+ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+ALLOWED_AUDIO_TYPES = {'audio/webm', 'audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/mp4'}
+VALID_TTS_VOICES = {'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'}
 
 # ---------------------------------------------------------------------------
 # HTTP Basic Authentication (credentials from environment variables ONLY)
@@ -325,6 +338,9 @@ def start_session():
     Returns:
         JSON with session_id, welcome message in chosen language, and state.
     """
+    if len(sessions) >= MAX_SESSIONS:
+        return jsonify({'error': 'Server busy. Please try again later.'}), 503
+
     data = request.json or {}
     lang_code = get_language(data.get('language', 'en'))
     session_id = str(uuid.uuid4())
@@ -377,9 +393,18 @@ def handle_message(session_id):
     if session_id not in sessions:
         return jsonify({'error': 'Session not found'}), 404
 
-    data = request.json
+    data = request.json or {}
     user_message = data.get('message', '')
+
+    if not user_message or not user_message.strip():
+        return jsonify({'error': 'Message is required'}), 400
+    if len(user_message) > MAX_MESSAGE_LENGTH:
+        return jsonify({'error': f'Message too long (max {MAX_MESSAGE_LENGTH} chars)'}), 400
+
     session = sessions[session_id]
+
+    if len(session.get('messages', [])) >= 100:
+        return jsonify({'error': 'Session message limit reached. Please start a new session.'}), 400
 
     # Allow language to be changed mid-session
     new_lang = data.get('language')
@@ -400,17 +425,18 @@ def handle_message(session_id):
     if not session.get('first_message_at'):
         session['first_message_at'] = now_iso
 
-    # ----- Run full 7-agent pipeline (Syed Ali Turab, March 4, 2026) -----
-    # Orchestrator mutates session (agent_outputs, state). Response includes message, state, emergency, metadata.
     from orchestrator import Orchestrator
-    _backend_dir = os.path.dirname(os.path.abspath(__file__))
     _config = {
-        'red_flags_path': os.path.join(_backend_dir, 'data', 'red_flags.json'),
-        'clinic_rules_path': os.path.join(_backend_dir, 'data', 'clinic_rules.json'),
-        'slots_path': os.path.join(_backend_dir, 'data', 'available_slots.json'),
+        'red_flags_path': os.path.join(_BACKEND_DIR, 'data', 'red_flags.json'),
+        'clinic_rules_path': os.path.join(_BACKEND_DIR, 'data', 'clinic_rules.json'),
+        'slots_path': os.path.join(_BACKEND_DIR, 'data', 'available_slots.json'),
     }
-    orch = Orchestrator(session=session, config=_config)
-    response = orch.process(user_message)
+    try:
+        orch = Orchestrator(session=session, config=_config)
+        response = orch.process(user_message)
+    except Exception as e:
+        logger.error(f"Pipeline error for session {session_id[:8]}: {e}", exc_info=True)
+        return jsonify({'error': 'Internal processing error'}), 500
     response['language'] = lang_code
 
     session['messages'].append({
@@ -495,6 +521,14 @@ def nearby_vets():
 
     if lat is None or lng is None:
         return jsonify({'error': 'lat and lng are required'}), 400
+
+    try:
+        lat, lng = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid lat/lng values'}), 400
+
+    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        return jsonify({'error': 'lat/lng out of valid range'}), 400
 
     radius_m = min(int(radius_km * 1000), 50000)
 
@@ -591,7 +625,7 @@ def nearby_vets():
 
     except Exception as e:
         logger.error(f"Nearby vet search failed: {e}")
-        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+        return jsonify({'error': 'Search failed. Please try again.'}), 500
 
 
 # ===========================================================================
@@ -787,7 +821,7 @@ def export_summary(session_id):
         buf = io.BytesIO(pdf_bytes)
         buf.seek(0)
 
-        species = pet.get('species', 'pet')
+        species = re.sub(r'[^a-zA-Z0-9_]', '', pet.get('species', 'pet'))[:20] or 'pet'
         filename = f'petcare_triage_{species}_{session_id[:8]}.pdf'
         return send_file(buf, mimetype='application/pdf',
                          as_attachment=True, download_name=filename)
@@ -796,7 +830,7 @@ def export_summary(session_id):
         return jsonify({'error': 'PDF generation requires fpdf2 package'}), 503
     except Exception as e:
         logger.error(f"PDF export failed: {e}")
-        return jsonify({'error': f'Export failed: {str(e)}'}), 500
+        return jsonify({'error': 'Export failed. Please try again.'}), 500
 
 
 def _pdf_row(pdf, label, value):
@@ -834,8 +868,10 @@ def analyze_photo(session_id):
 
     photo = request.files['photo']
 
+    if photo.content_type not in ALLOWED_IMAGE_TYPES:
+        return jsonify({'error': 'Invalid image type. Allowed: JPEG, PNG, WebP, GIF'}), 400
+
     try:
-        import base64
         from openai import OpenAI
 
         img_bytes = photo.read()
@@ -843,7 +879,8 @@ def analyze_photo(session_id):
         mime = photo.content_type or 'image/jpeg'
 
         session = sessions[session_id]
-        species = session.get('pet_profile', {}).get('species', 'pet')
+        raw_species = session.get('pet_profile', {}).get('species', 'pet')
+        species = re.sub(r'[^a-zA-Z0-9 ]', '', raw_species)[:30] or 'pet'
         lang_code = session.get('language', 'en')
         lang_names = {
             'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',
@@ -908,7 +945,7 @@ def analyze_photo(session_id):
 
     except Exception as e:
         logger.error(f"Photo analysis failed: {e}")
-        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+        return jsonify({'error': 'Analysis failed. Please try again.'}), 500
 
 
 # ===========================================================================
@@ -939,6 +976,9 @@ def transcribe_audio():
         return jsonify({'error': 'No audio file provided'}), 400
 
     audio_file = request.files['audio']
+    if audio_file.content_type and audio_file.content_type not in ALLOWED_AUDIO_TYPES:
+        return jsonify({'error': 'Invalid audio type'}), 400
+
     lang_code = get_language(request.form.get('language', 'en'))
     whisper_lang = SUPPORTED_LANGUAGES[lang_code]['whisper_code']
 
@@ -973,7 +1013,7 @@ def transcribe_audio():
 
     except Exception as e:
         logger.error(f"Whisper transcription failed: {e}")
-        return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
+        return jsonify({'error': 'Transcription failed. Please try again.'}), 500
 
 
 @app.route('/api/voice/synthesize', methods=['POST'])
@@ -997,12 +1037,18 @@ def synthesize_speech():
             'error': 'Voice synthesis requires OPENAI_API_KEY'
         }), 503
 
-    data = request.json
+    data = request.json or {}
     text = data.get('text', '')
     voice = data.get('voice', 'nova')
 
+    if voice not in VALID_TTS_VOICES:
+        voice = 'nova'
+
     if not text:
         return jsonify({'error': 'No text provided'}), 400
+
+    if len(text) > MAX_MESSAGE_LENGTH:
+        return jsonify({'error': 'Text too long'}), 400
 
     try:
         from openai import OpenAI
@@ -1026,7 +1072,7 @@ def synthesize_speech():
 
     except Exception as e:
         logger.error(f"TTS synthesis failed: {e}")
-        return jsonify({'error': f'Synthesis failed: {str(e)}'}), 500
+        return jsonify({'error': 'Synthesis failed. Please try again.'}), 500
 
 
 # ===========================================================================
@@ -1045,7 +1091,7 @@ if __name__ == '__main__':
         "Supported languages: %s",
         ', '.join(f"{v['name']} ({k})" for k, v in SUPPORTED_LANGUAGES.items())
     )
-    logger.info(f"PDF export persistence: {SESSION_TTL_COMPLETED//3600} hours for completed sessions")
+    logger.info(f"PDF export persistence: {COMPLETED_TTL_SECONDS//3600} hours for completed sessions")
     
     # Start the session cleanup timer
     _start_cleanup_timer()
