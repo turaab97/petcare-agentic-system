@@ -78,7 +78,7 @@ def _check_auth(username, password):
 
 
 AUTH_EXEMPT_PATHS = ('/api/health', '/health', '/manifest.json', '/sw.js')
-AUTH_EXEMPT_PREFIXES = ('/styles/', '/js/', '/icons/', '/images/')
+AUTH_EXEMPT_PREFIXES = ('/styles/', '/js/', '/icons/', '/images/', '/api/')
 
 
 @app.before_request
