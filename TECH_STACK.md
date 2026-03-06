@@ -162,8 +162,10 @@ FROM python:3.11-slim                    # 1. Start from slim Python image
 COPY requirements.txt .                  # 2. Copy dependency list
 RUN pip install --no-cache-dir -r ...    # 3. Install Python packages
 COPY . .                                 # 4. Copy application code
-EXPOSE 5002                              # 5. Declare the port
-CMD ["python", "backend/api_server.py"]  # 6. Start Flask server
+EXPOSE ${PORT:-5002}                     # 5. Declare the port
+CMD gunicorn --bind 0.0.0.0:${PORT}     # 6. Start Gunicorn (production WSGI)
+    --workers 2 --timeout 120
+    backend.api_server:app
 ```
 
 The build is **deterministic**: same code + same requirements.txt = same image every time. No compiled assets or build steps needed (frontend is vanilla HTML/CSS/JS).
@@ -389,10 +391,13 @@ For production, this layer would be expanded to support multiple event types (em
 
 | Component | Technology | Where It Runs | Purpose |
 |-----------|-----------|--------------|---------|
-| **Session Store** | Python `dict` (in-memory) | Inside Flask process | Active intake sessions |
+| **Session Store (active)** | Python `dict` (in-memory) | Inside Flask process | Active intake sessions (1 hr TTL) |
+| **Session Store (completed)** | Python `dict` (in-memory) | Inside Flask process | Completed triage sessions for PDF download (24 hr TTL) |
+| **Session Cleanup** | Background thread (10 min interval) | Inside Flask process | Periodic expiry of stale sessions |
 | **Clinic Rules** | `backend/data/clinic_rules.json` | Loaded at startup | Triage rules, routing maps, providers |
 | **Red Flags** | `backend/data/red_flags.json` | Loaded at startup | 50+ emergency trigger terms |
 | **Mock Schedule** | `backend/data/available_slots.json` | Loaded at startup | Simulated appointment slots |
+| **Client Storage** | Browser `localStorage` | User's browser | Pet profiles, symptom history, consent, onboarding state |
 | **Logging** | Python `logging` → `backend/logs/` | File + console | API requests, agent trace, errors |
 
 ### Design References (not used at runtime)
@@ -439,12 +444,12 @@ See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for step-by-step instructions.
 
 | Package | Purpose | Used By |
 |---------|---------|---------|
-| `flask` | Web server, REST API, static serving | api_server.py |
+| `flask` | Web server, REST API, static serving, HTTP Basic Auth | api_server.py |
 | `python-dotenv` | Load `.env` file into environment | api_server.py |
-| `pydantic` | JSON schema validation, data models | All agents |
-| `openai` | GPT-4o-mini, Whisper STT, TTS | Intake, Triage, Guidance, Voice |
+| `openai` | GPT-4o-mini, Whisper STT, TTS, Vision | Intake, Triage, Guidance, Voice, Photo |
 | `requests` | HTTP client for webhook POST | api_server.py (webhook) |
-| `gunicorn` | Production WSGI server | Cloud deployment (Render) |
+| `fpdf2` | PDF generation for triage summary export | api_server.py (summary endpoint) |
+| `gunicorn` | Production WSGI server (multi-worker) | Cloud deployment (Render, Docker) |
 
 ---
 
@@ -452,12 +457,25 @@ See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for step-by-step instructions.
 
 | Concern | Approach |
 |---------|----------|
-| **API Keys** | `.env` file (gitignored); injected via `--env-file` in Docker |
-| **Owner PII** | Session-only memory; no database, no persistent storage |
+| **Authentication** | HTTP Basic Auth via environment variables (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`). Credentials never hardcoded. Health check and static assets exempted. |
+| **API Keys** | `.env` file (gitignored); injected via `--env-file` in Docker or Render env vars |
+| **Owner PII** | Session-only memory; no database, no persistent server-side storage |
+| **Client-Side Storage** | Pet profiles in `localStorage` (user-controlled, clearable); no PII sent to server |
 | **Medical Safety** | Non-diagnostic language enforced; Safety Gate blocks before routing |
-| **Data Retention** | Anonymized logs only; no PHI stored anywhere |
+| **Data Retention** | Anonymized logs only; no PHI stored anywhere. Sessions expire automatically (1hr active, 24hr completed). |
 | **Transport** | HTTPS default on Render/Railway; HTTP locally |
 | **Container Security** | `python:3.11-slim` base; no root processes; minimal attack surface |
+
+## External API Integrations
+
+| API | Purpose | Called From | Cost |
+|-----|---------|-------------|------|
+| **OpenAI GPT-4o-mini** | Intake, Triage, Guidance reasoning | Backend (agents) | ~$0.01/session |
+| **OpenAI Whisper** | Voice transcription (Tier 2) | Backend (`/api/voice/transcribe`) | $0.006/min |
+| **OpenAI TTS** | Voice synthesis (Tier 2) | Backend (`/api/voice/synthesize`) | $15/1M chars |
+| **OpenAI Vision** | Photo symptom analysis | Backend (`/api/photo/analyze`) | ~$0.002/photo |
+| **Google Places API (New)** | Nearby vet clinic search | Frontend (client-side) | Free tier ($200/mo credit) |
+| **OpenStreetMap Nominatim** | Geocoding fallback (city → lat/lng) | Frontend (client-side) | Free |
 
 ---
 

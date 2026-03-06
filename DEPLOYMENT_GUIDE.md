@@ -281,11 +281,18 @@ Go to [render.com](https://render.com/) and sign up (free).
 
 In the Render dashboard, go to **Environment** and add:
 
-| Key | Value |
-|-----|-------|
-| `OPENAI_API_KEY` | `sk-your-key-here` |
-| `APP_ENV` | `production` |
-| `PORT` | `5002` |
+| Key | Value | Notes |
+|-----|-------|-------|
+| `OPENAI_API_KEY` | `sk-your-key-here` | Required — GPT-4o-mini, Whisper, TTS, Vision |
+| `GOOGLE_MAPS_API_KEY` | `AIza-your-key-here` | Required for "Find Nearby Vets" feature |
+| `AUTH_ENABLED` | `true` | Set to `true` to require login |
+| `AUTH_USERNAME` | *(your username)* | Set only via Render env vars — never in code |
+| `AUTH_PASSWORD` | *(your password)* | Set only via Render env vars — never in code |
+| `APP_ENV` | `production` | Disables Flask debug mode |
+| `PORT` | `5002` | Must match Dockerfile EXPOSE |
+| `LOG_LEVEL` | `INFO` | Optional; `DEBUG` for troubleshooting |
+
+> **Security:** Credentials must ONLY be set via the Render dashboard environment variables. Never commit passwords to code or `.env.example`.
 
 ### Step 5: Deploy
 
@@ -336,11 +343,15 @@ Go to [railway.app](https://railway.app/) and sign up.
 
 In the Railway dashboard, go to **Variables** and add:
 
-| Key | Value |
-|-----|-------|
-| `OPENAI_API_KEY` | `sk-your-key-here` |
-| `APP_ENV` | `production` |
-| `PORT` | `5002` |
+| Key | Value | Notes |
+|-----|-------|-------|
+| `OPENAI_API_KEY` | `sk-your-key-here` | Required |
+| `GOOGLE_MAPS_API_KEY` | `AIza-your-key-here` | Required for vet finder |
+| `AUTH_ENABLED` | `true` | Set to `true` to require login |
+| `AUTH_USERNAME` | *(your username)* | Set only via dashboard — never in code |
+| `AUTH_PASSWORD` | *(your password)* | Set only via dashboard — never in code |
+| `APP_ENV` | `production` | Disables Flask debug mode |
+| `PORT` | `5002` | Must match Dockerfile |
 
 ### Step 4: Deploy
 

@@ -255,11 +255,13 @@ Webhook code is **implemented and optional**. The app runs fully without any web
 |------|-------|--------|----------|
 | Write technical report (`technical_report.md`) | -- | In Progress | P0 |
 | Record POC demo video (10-15 min) | -- | Not Started | P0 |
-| Deploy to **Render** (recommended) / Railway | -- | Done (Render-ready; Dockerfile tested) | P1 |
+| Deploy to **Render** (recommended) / Railway | -- | Done (Render-ready; Dockerfile + auth tested) | P1 |
+| HTTP Basic Auth (env-var-only credentials) | -- | Done | P0 |
+| Two-tier session persistence (24hr PDF access) | -- | Done | P1 |
 | Docker containerization + start scripts | -- | Done | P1 |
 | Final README polish | -- | Done | P1 |
 | Code cleanup and documentation | -- | Done | P2 |
-| Update all docs to match current build | -- | In Progress | P1 |
+| Update all docs to match current build | -- | Done | P1 |
 
 ### Deliverables
 - [ ] Technical report (complete)

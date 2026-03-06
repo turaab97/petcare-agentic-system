@@ -12,6 +12,40 @@ This file tracks the evolution of the PetCare Triage & Smart Booking Agent proje
 
 ## Branch: `PetCare_Syed` on `FergieFeng/petcare-agentic-system`
 
+### 2026-03-06 — Auth middleware, session persistence, deployment readiness, docs update
+
+**Commits:** `docs: update all documentation to match current POC + auth middleware`
+
+**Security & Deployment:**
+- Added HTTP Basic Auth middleware to `api_server.py` (credentials from environment variables only — never hardcoded)
+- Auth exempts `/api/health`, `manifest.json`, and `service-worker.js`
+- Added `AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD` to `.env.example` (with security warnings)
+- Created `backend/__init__.py` for Gunicorn module import support
+
+**Session Persistence:**
+- Implemented two-tier session management: active sessions (1hr TTL) + completed sessions (24hr TTL)
+- Completed triage sessions preserved for PDF download for 24 hours
+- Added background cleanup thread (every 10 minutes) for expired sessions
+
+**Location Fallback:**
+- Added manual city/postal code entry when geolocation fails or is denied
+- Added OpenStreetMap Nominatim geocoding as fallback for manual location input
+- Added default location option (Toronto) for quick testing
+
+**Full Multilingual Output:**
+- Updated all UI strings (vet finder, cost estimator, feedback, reminders, breed risks, history, emergency, photo upload, API errors) to use `t()` translation helper
+- All 7 languages now have complete UI string coverage
+
+**Documentation:**
+- Updated `README.md`: expanded System Architecture diagram (auth, session tiers, Google Places, Nominatim, PWA, notifications), enriched Agent Pipeline Flow (detailed per-agent I/O), expanded Voice Architecture (safety layer), detailed Core Multi-Agent Layer table (inputs/outputs per agent), added auth env vars, updated project structure
+- Updated `TECH_STACK.md`: added fpdf2 to dependencies, added auth middleware, two-tier sessions, external API integrations table, updated Docker CMD to gunicorn
+- Updated `DEPLOYMENT_GUIDE.md`: added auth env vars to Render and Railway sections with security notes
+- Updated `PROJECT_PLAN.md`: marked auth/deploy task as done in Phase 8
+- Updated `AGENT_DESIGN_CANVAS.md`: confirmed all enhanced features listed
+- Updated this changelog
+
+---
+
 ### 2026-03-06 — Frontend redesign + consumer-ready features
 
 **Commits:** `feat: redesign frontend with professional PetCare theme`, plus consumer features

@@ -116,23 +116,31 @@ So: build the pipeline and two outputs first (owner chat + clinic JSON); then ad
 
 ```mermaid
 graph TD
-    BROWSER["User Browser — Chat UI · Voice · 7 Languages"]
+    BROWSER["User Browser — Chat UI · Voice · Photo · 7 Languages"]
 
-    BROWSER -->|HTTP / HTTPS| FLASK["Flask API Server — Port 5002"]
+    BROWSER -->|HTTP / HTTPS| AUTH["HTTP Basic Auth Middleware"]
+    AUTH --> FLASK["Flask API Server — Port 5002 — Gunicorn"]
     FLASK --> ORCH["Orchestrator"]
-    FLASK --> SESSION["Session Store — In-Memory"]
+    FLASK --> SESSION["Session Store — Two-Tier In-Memory"]
 
-    ORCH --> A["A · Intake — LLM"]
-    ORCH --> B["B · Safety Gate — Rules"]
-    ORCH --> CC["C · Confidence — Rules"]
-    ORCH --> D["D · Triage — LLM"]
-    ORCH --> E["E · Routing — Rules"]
-    ORCH --> FF["F · Scheduling — Rules"]
-    ORCH --> GA["G · Guidance — LLM"]
+    SESSION --> ACTIVE["Active Sessions — 1 hr TTL"]
+    SESSION --> COMPLETED["Completed Sessions — 24 hr TTL"]
 
-    A -->|API call| OPENAI["OpenAI API — GPT-4o-mini · Whisper · TTS"]
+    ORCH --> A["A · Intake Agent — LLM"]
+    ORCH --> B["B · Safety Gate Agent — Rules"]
+    ORCH --> CC["C · Confidence Gate — Rules"]
+    ORCH --> D["D · Triage Agent — LLM"]
+    ORCH --> E["E · Routing Agent — Rules"]
+    ORCH --> FF["F · Scheduling Agent — Rules"]
+    ORCH --> GA["G · Guidance & Summary — LLM"]
+
+    A -->|API call| OPENAI["OpenAI API — GPT-4o-mini"]
     D -->|API call| OPENAI
     GA -->|API call| OPENAI
+
+    FLASK -->|/api/voice/transcribe| WHISPER["OpenAI Whisper — STT"]
+    FLASK -->|/api/voice/synthesize| TTS["OpenAI TTS — Speech"]
+    FLASK -->|/api/photo/analyze| VISION["OpenAI Vision — Photo Analysis"]
 
     B --> DATA["JSON Config — clinic_rules · red_flags · slots"]
     CC --> DATA
@@ -144,11 +152,13 @@ graph TD
 
     FLASK -->|Dockerfile| RENDER["Render — Cloud Deployment"]
 
-    FLASK --> GMAPS["Google Places API — Nearby Vets"]
-    FLASK --> VISION["OpenAI Vision — Photo Analysis"]
-    FLASK --> PDF["PDF Export — fpdf2"]
+    BROWSER -->|Google Places API| GMAPS["Nearby Vet Finder — call · directions"]
+    BROWSER -->|Nominatim fallback| NOMINATIM["OpenStreetMap — Geocoding"]
+    FLASK -->|/api/session/id/summary| PDF["PDF Export — fpdf2"]
     BROWSER --> GEO["Browser Geolocation"]
-    BROWSER --> LS["localStorage — Pet Profile · History"]
+    BROWSER --> LS["localStorage — Pet Profile · History · Consent"]
+    BROWSER --> NOTIF["Browser Notifications — Reminders"]
+    BROWSER --> SW["Service Worker — PWA"]
 
     style A fill:#dc2626,color:#fff
     style D fill:#dc2626,color:#fff
@@ -157,16 +167,24 @@ graph TD
     style CC fill:#16a34a,color:#fff
     style E fill:#16a34a,color:#fff
     style FF fill:#16a34a,color:#fff
+    style AUTH fill:#f59e0b,color:#000
     style WH fill:#2563eb,color:#fff
     style RENDER fill:#7c3aed,color:#fff
     style GMAPS fill:#ea4335,color:#fff
+    style NOMINATIM fill:#ea4335,color:#fff
     style VISION fill:#dc2626,color:#fff
+    style WHISPER fill:#2563eb,color:#fff
+    style TTS fill:#2563eb,color:#fff
     style PDF fill:#64748b,color:#fff
     style GEO fill:#16a34a,color:#fff
     style LS fill:#16a34a,color:#fff
+    style NOTIF fill:#16a34a,color:#fff
+    style SW fill:#16a34a,color:#fff
+    style ACTIVE fill:#0d9488,color:#fff
+    style COMPLETED fill:#0d9488,color:#fff
 ```
 
-**Color key:** 🔴 Red = LLM/API-powered · 🟢 Green = Client-side (free) · 🔵 Blue = Webhook output · 🟣 Purple = Cloud deployment
+**Color key:** 🔴 Red = LLM/API-powered · 🟢 Green = Client-side (free) · 🔵 Blue = OpenAI voice APIs · 🟠 Orange = Auth middleware · 🟣 Purple = Cloud deployment
 
 ---
 
@@ -176,33 +194,40 @@ graph TD
 graph TD
     START(("Pet Owner sends message"))
 
-    START --> A["A · Intake Agent — LLM"]
-    A --> B["B · Safety Gate — Rules"]
-    B --> B_Q{"Emergency?"}
-    B_Q -- YES --> EM["EMERGENCY — Escalate now"]
-    B_Q -- NO --> CC["C · Confidence Gate — Rules"]
-    CC --> C_Q{"Fields complete?"}
-    C_Q -- NO --> LOOP["Clarify with user"]
+    START --> A["A · Intake Agent — LLM\nCollect: species, breed, age,\nchief complaint, timeline,\nsymptom-specific follow-ups"]
+    A --> B["B · Safety Gate — Rules\nScan for 50+ red-flag phrases\nin red_flags.json"]
+    B --> B_Q{"Red flag\ndetected?"}
+    B_Q -- YES --> EM["EMERGENCY PATH\nSkip triage/routing/booking\nImmediate escalation messaging"]
+    EM --> G_EM["G · Guidance — LLM\nEmergency do/don't guidance"]
+    G_EM --> OUT_EM["Owner: Seek emergency care NOW\nClinic: Emergency JSON alert"]
+    B_Q -- NO --> CC["C · Confidence Gate — Rules\nVerify required fields present\nCheck data consistency"]
+    CC --> C_Q{"Proceed?"}
+    C_Q -- "Missing fields" --> LOOP["Ask clarifying question\n(max 2 loops)"]
     LOOP --> A
-    C_Q -- YES --> D["D · Triage Agent — LLM"]
-    D --> E["E · Routing Agent — Rules"]
-    E --> FF["F · Scheduling Agent — Rules"]
-    FF --> GA["G · Guidance Agent — LLM"]
-    GA --> OUT1["Owner: Urgency + Guidance"]
-    GA --> OUT2["Clinic: Structured JSON"]
+    C_Q -- "Low confidence" --> HR["Route to human\nreceptionist review"]
+    C_Q -- "Proceed" --> D["D · Triage Agent — LLM\nAssign: Emergency / Same-day\n/ Soon / Routine\n+ confidence score"]
+    D --> E["E · Routing Agent — Rules\nMap symptom category →\nappointment type + provider pool\nvia clinic_rules.json"]
+    E --> FF["F · Scheduling Agent — Rules\nPropose available slots\nfrom available_slots.json"]
+    FF --> GA["G · Guidance & Summary — LLM\nOwner: do/don't while waiting\nClinic: structured JSON summary"]
+    GA --> OUT1["Owner: Urgency + Guidance + Slots"]
+    GA --> OUT2["Clinic: Structured JSON via Webhook"]
+    GA --> POST["Post-Triage Actions:\nBook appointment · Find nearby vets\nDownload PDF · Cost estimate\nFeedback · Follow-up reminder"]
 
     style A fill:#dc2626,color:#fff
     style D fill:#dc2626,color:#fff
     style GA fill:#dc2626,color:#fff
+    style G_EM fill:#dc2626,color:#fff
     style B fill:#16a34a,color:#fff
     style CC fill:#16a34a,color:#fff
     style E fill:#16a34a,color:#fff
     style FF fill:#16a34a,color:#fff
     style EM fill:#991b1b,color:#fff
     style LOOP fill:#f59e0b,color:#000
+    style HR fill:#f59e0b,color:#000
+    style POST fill:#0d9488,color:#fff
 ```
 
-**Legend:** 🔴 Red = LLM-powered (API call, ~$0.002 each) · 🟢 Green = Rule-based (local, zero cost)
+**Legend:** 🔴 Red = LLM-powered (API call, ~$0.002 each) · 🟢 Green = Rule-based (local, zero cost) · 🟠 Yellow = Human loop · 🟢 Teal = Post-triage features
 
 ---
 
@@ -210,27 +235,28 @@ graph TD
 
 ```mermaid
 graph TD
-    MIC["User Microphone"]
+    MIC["🎤 User Microphone"]
 
-    MIC -->|Tier 1| SR["Browser SpeechRecognition — Free"]
-    MIC -->|Tier 2| REC["MediaRecorder — audio/webm"]
-    MIC -->|Tier 3| RT["OpenAI Realtime API — WebSocket"]
+    MIC -->|Tier 1 — Free| SR["Browser SpeechRecognition\nChrome/Edge best\nBCP-47 lang tag (e.g. fr-FR)"]
+    MIC -->|Tier 2 — $0.006/min| REC["MediaRecorder → audio/webm\nWorks in all browsers"]
+    MIC -->|"Tier 3 — stretch goal"| RT["OpenAI Realtime API\nWebSocket bidirectional"]
 
-    SR --> TXT["Transcribed Text"]
-    REC -->|POST /api/voice/transcribe| WHISPER["Whisper API — $0.006/min"]
+    SR --> TXT["Transcribed Text\n+ language code"]
+    REC -->|"POST /api/voice/transcribe\n+ language hint"| WHISPER["OpenAI Whisper\nAuto-detects language\nHint improves accuracy"]
     WHISPER --> TXT
 
-    TXT --> PIPE["Agent Pipeline — 7 Agents"]
+    TXT --> SAFETY["Voice Safety Layer:\n• Critical field confirmation\n• Red-flag double confirmation\n• Low-confidence → text fallback"]
+    SAFETY --> PIPE["Agent Pipeline — 7 Agents\n(same pipeline as text input)"]
 
-    PIPE --> RESP["Agent Response Text"]
+    PIPE --> RESP["Agent Response Text\n(in session language)"]
 
-    RESP -->|Tier 1| SYNTH["Browser SpeechSynthesis — Free"]
-    RESP -->|Tier 2| TTS["OpenAI TTS — $15/1M chars"]
+    RESP -->|Tier 1 — Free| SYNTH["Browser SpeechSynthesis\nBCP-47 voice selection"]
+    RESP -->|"Tier 2 — $15/1M chars"| TTS["OpenAI TTS (tts-1)\nAuto-detects language\nVoice: nova (default)"]
 
-    SYNTH --> SPK["Speaker Output"]
+    SYNTH --> SPK["🔊 Speaker Output"]
     TTS --> SPK
 
-    RT <-->|bidirectional| SPK_RT["Speaker — sub-500ms"]
+    RT <-->|"bidirectional, <500ms"| SPK_RT["🔊 Natural conversation\n(post-POC stretch)"]
 
     style SR fill:#16a34a,color:#fff
     style SYNTH fill:#16a34a,color:#fff
@@ -238,29 +264,30 @@ graph TD
     style TTS fill:#2563eb,color:#fff
     style RT fill:#7c3aed,color:#fff
     style SPK_RT fill:#7c3aed,color:#fff
+    style SAFETY fill:#f59e0b,color:#000
 ```
 
-**Color key:** 🟢 Green = Tier 1 (free, browser-native) · 🔵 Blue = Tier 2 (OpenAI Whisper + TTS) · 🟣 Purple = Tier 3 (Realtime API, stretch)
+**Color key:** 🟢 Green = Tier 1 (free, browser-native) · 🔵 Blue = Tier 2 (OpenAI Whisper + TTS) · 🟣 Purple = Tier 3 (Realtime API, stretch) · 🟠 Yellow = Safety layer
 
 ---
 
 ## 🤖 Core Multi-Agent Layer
 
-The PetCare Agent uses a **7-sub-agent architecture** coordinated by a central **Orchestrator Agent**:
+The PetCare Agent uses a **7-sub-agent architecture** coordinated by a central **Orchestrator Agent**. All agents run **in-process** within the same Flask server (no microservices, no network calls between agents):
 
-| # | Agent | Type | Responsibility |
-|---|-------|------|---------------|
-| A | **Intake Agent** | 🔴 LLM | Collect pet profile + chief complaint + timeline; ask adaptive follow-ups by symptom area |
-| B | **Safety Gate Agent** | 🟢 Rules | Detect emergency red flags → immediate escalation messaging |
-| C | **Confidence Gate Agent** | 🟢 Rules | Verify required fields and confidence; route to clarification or receptionist review |
-| D | **Triage Agent** | 🔴 LLM | Assign urgency tier (Emergency / Same-day / Soon / Routine) with rationale + confidence |
-| E | **Routing Agent** | 🟢 Rules | Classify symptom category → appointment type / provider pool |
-| F | **Scheduling Agent** | 🟢 Rules | Propose available slots or generate booking request payload |
-| G | **Guidance & Summary Agent** | 🔴 LLM | Generate owner "do/don't" guidance + structured clinic-ready intake summary |
+| # | Agent | Type | Input | Output | Responsibility |
+|---|-------|------|-------|--------|---------------|
+| A | **Intake Agent** | 🔴 LLM | User message + conversation history | Pet profile, chief complaint, follow-up question | Collect species, breed, age, weight, chief complaint, timeline; ask adaptive follow-ups by symptom area (GI, respiratory, derm, injury, urinary, neuro, behavioral). Supports any animal species (dogs, cats, birds, reptiles, fish, horses, exotic). |
+| B | **Safety Gate Agent** | 🟢 Rules | Extracted symptoms from Intake | Red-flag status, matched keywords | Scan for 50+ emergency trigger phrases from `red_flags.json` (difficulty breathing, seizures, collapse, suspected toxin, inability to urinate, uncontrolled bleeding). Triggers immediate escalation — bypasses triage/routing/booking. |
+| C | **Confidence Gate Agent** | 🟢 Rules | Pet profile fields, symptom data | Proceed / clarify / human-review decision | Verify required fields (species, chief complaint, duration) are present and consistent. If missing → loop back to Intake (max 2x). If conflicting → route to human receptionist review. |
+| D | **Triage Agent** | 🔴 LLM | Complete pet profile + symptoms | Urgency tier, confidence score, rationale | Assign urgency: **Emergency** (life-threatening, within hours), **Same-day** (needs attention today), **Soon** (within 1-3 days), **Routine** (next available). Returns rationale and 0-1 confidence score. |
+| E | **Routing Agent** | 🟢 Rules | Symptom category from Triage | Appointment type, provider pool | Map symptom category to appointment type and provider pool using `clinic_rules.json`. Species-specific routing (cat vs dog vs exotic → different providers). |
+| F | **Scheduling Agent** | 🟢 Rules | Appointment type, urgency tier | Proposed time slots | Query `available_slots.json` for slots matching urgency window. Emergency → earliest available; Routine → next regular slot. |
+| G | **Guidance & Summary** | 🔴 LLM | Full session data (all agent outputs) | Owner guidance + clinic JSON | Generate species-correct "do/don't while waiting" + escalation cues (owner-facing, in session language). Generate structured clinic-ready JSON summary (always English). |
 
-Only 3 of 7 agents make LLM API calls (~$0.01/session). The other 4 run locally as deterministic rules with zero cost.
+**Execution model:** Sequential within a single HTTP request. Only 3 of 7 agents make LLM API calls (~$0.01/session). The other 4 run locally as deterministic rules with zero cost and zero latency.
 
-Agents operate under role-based data permissions to maintain safety boundaries. See [docs/architecture/agents.md](docs/architecture/agents.md) for full I/O contracts and data access policy.
+**Data permissions:** Agents operate under role-based data access. Triage cannot modify the pet profile. Safety Gate runs before Triage to prevent any downstream reasoning on emergency cases. Scheduling cannot override triage urgency. See [docs/architecture/agents.md](docs/architecture/agents.md) for full I/O contracts and data access policy.
 
 ---
 
@@ -431,6 +458,10 @@ The following were consulted for domain context and workflow design only. They a
 | PWA support | ✅ Implemented |
 | Chat transcript export | ✅ Implemented |
 | Animated onboarding | ✅ Implemented |
+| HTTP Basic Auth (password protection) | ✅ Implemented (env vars only, never hardcoded) |
+| Two-tier session persistence (24hr PDF access) | ✅ Implemented |
+| Location fallback (manual city entry + default) | ✅ Implemented |
+| Full multilingual output (all UI strings in all 7 languages) | ✅ Implemented |
 | Docker / docker-compose | ✅ Written |
 | Webhook automation (optional) | ✅ Implemented; fires only if `N8N_WEBHOOK_URL` set |
 | End-to-end integration testing | ✅ Passing (evaluate.py — 6 scenarios) |
@@ -536,11 +567,15 @@ python api_server.py
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o-mini, Whisper, TTS, Vision |
-| `GOOGLE_MAPS_API_KEY` | Yes | Google Maps API key for nearby vet finder (required for "Find Nearby Vets") |
+| `GOOGLE_MAPS_API_KEY` | Yes | Google Maps API key for nearby vet finder (requires Places API New enabled) |
+| `AUTH_ENABLED` | No | Set to `true` to enable HTTP Basic Auth (default: `false`) |
+| `AUTH_USERNAME` | No | Username for HTTP Basic Auth (set via environment only — never hardcode) |
+| `AUTH_PASSWORD` | No | Password for HTTP Basic Auth (set via environment only — never hardcode) |
 | `DEFAULT_LLM_PROVIDER` | No | `openai` (default) |
 | `DEFAULT_LLM_MODEL` | No | Model name (default: `gpt-4o-mini`) |
 | `PORT` | No | Server port (default: `5002`) |
-| `LOG_LEVEL` | No | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `APP_ENV` | No | `development` or `production` (default: `development`) |
+| `LOG_LEVEL` | No | `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`) |
 | `N8N_WEBHOOK_URL` | No | Webhook URL for post-intake automation (optional) |
 
 ---
@@ -548,29 +583,50 @@ python api_server.py
 ## 📁 Project Structure
 
 ```
-├── frontend/                    # Frontend files
-│   ├── index.html               # Main HTML (intake chat UI)
-│   ├── js/app.js                # Client-side logic (voice, multilingual)
-│   └── styles/main.css          # Styles (RTL support)
+├── frontend/                    # Frontend files (served as static by Flask)
+│   ├── index.html               # Main HTML (chat UI, Inter font, branded header)
+│   ├── js/app.js                # Client-side logic (voice, i18n, streaming, PWA,
+│   │                            #   cost estimator, feedback, reminders, vet finder,
+│   │                            #   photo upload, onboarding, dark mode, transcript export)
+│   ├── styles/main.css          # Styles (teal theme, dark mode, RTL, paw avatars)
+│   ├── manifest.json            # PWA web app manifest
+│   ├── sw.js                    # Service worker for PWA offline support
+│   └── icons/                   # App icons (192px, 512px)
 ├── backend/                     # Backend files
-│   ├── api_server.py            # Flask API server
-│   ├── orchestrator.py          # Orchestrator (coordinates sub-agents)
+│   ├── __init__.py              # Package init (required for Gunicorn import)
+│   ├── api_server.py            # Flask API server (auth, sessions, voice, PDF, webhook)
+│   ├── orchestrator.py          # Orchestrator (coordinates 7 sub-agents)
 │   ├── agents/                  # Sub-agent implementations (A-G)
-│   ├── data/                    # Clinic rules, red flags, mock schedule
-│   └── logs/                    # Runtime logs
+│   │   ├── intake_agent.py      # A — Intake (LLM, adaptive follow-ups)
+│   │   ├── safety_gate_agent.py # B — Safety Gate (rule-based, 50+ red flags)
+│   │   ├── confidence_gate.py   # C — Confidence Gate (rule-based, field validation)
+│   │   ├── triage_agent.py      # D — Triage (LLM, urgency classification)
+│   │   ├── routing_agent.py     # E — Routing (rule-based, clinic_rules.json)
+│   │   ├── scheduling_agent.py  # F — Scheduling (rule-based, available_slots.json)
+│   │   └── guidance_summary.py  # G — Guidance & Summary (LLM, owner + clinic output)
+│   ├── data/                    # Operational data (synthetic, no PHI)
+│   │   ├── clinic_rules.json    # Triage rules, routing maps, provider specialties
+│   │   ├── red_flags.json       # 50+ emergency trigger phrases
+│   │   └── available_slots.json # Mock clinic schedule (30-min slots)
+│   ├── evaluate.py              # End-to-end evaluation script (6 scenarios)
+│   └── logs/                    # Runtime logs (api_server.log)
 ├── docs/                        # Documentation
+│   ├── AGENT_DESIGN_CANVAS.md   # Agent Design Canvas (Diana Liu)
+│   ├── BASELINE_METHODOLOGY.md  # Baseline evaluation methodology (Diana Liu)
+│   ├── CHANGELOG.md             # Full project changelog
 │   ├── architecture/            # System-level design docs
-│   ├── agent_specs/             # Per-agent design work packages (intake, triage, etc.)
-│   └── original_main/           # Preserved docs from main branch (Fergie's design)
-├── Dockerfile                   # Single-container deployment
-├── docker-compose.yml           # Multi-container (optional; includes n8n for local dev)
-├── start.sh / start.ps1         # One-click Docker start
-├── requirements.txt             # Python dependencies
-├── PROJECT_PLAN.md              # Project plan and timeline
-├── TECH_STACK.md                # Full technology stack
-├── DEPLOYMENT_GUIDE.md          # Step-by-step deployment
-├── technical_report.md          # MMAI 891 report template
-└── .env.example                 # Environment variable template
+│   └── original_main/           # Preserved docs from main branch
+├── Dockerfile                   # Single-container deployment (python:3.11-slim)
+├── docker-compose.yml           # Multi-container (optional; includes n8n)
+├── .dockerignore                # Docker build exclusions
+├── start.sh / start.ps1         # One-click Docker start scripts
+├── requirements.txt             # Python dependencies (flask, gunicorn, openai, fpdf2)
+├── PROJECT_PLAN.md              # Project plan, phases, risk register
+├── TECH_STACK.md                # Full technology stack with runtime architecture
+├── DEPLOYMENT_GUIDE.md          # Step-by-step deployment (local, Docker, Render)
+├── technical_report.md          # MMAI 891 technical report
+├── .env.example                 # Environment variable template
+└── .gitignore                   # Git exclusions (.env, __pycache__, logs)
 ```
 
 ---
