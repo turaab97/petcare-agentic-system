@@ -329,6 +329,7 @@ These features were added on `PetCare_Syed` without any corresponding design in 
 | **Deployment guides** | Step-by-step for Local Python, Docker, Render, Railway |
 | **6 detailed test scenarios** | Concrete end-to-end test cases with per-agent expected behavior and validation checklist |
 | **Cost estimates** | ~$0.01/session breakdown helps justify the approach to stakeholders |
+| **Security hardening** | Input validation, prompt injection mitigation, XSS prevention, credential hygiene, info disclosure prevention — demonstrates secure-by-default engineering |
 
 ---
 
@@ -381,6 +382,24 @@ All design decisions documented above have been implemented and validated in the
 - **~11.4s average processing time** per session (well within the <15s target)
 - **All consumer features built and working:** multilingual support, voice input (Tier 1), emergency short-circuit path, clarification loops, clinic-ready JSON summaries
 - **Safety-first ordering confirmed:** Safety Gate (B) runs immediately after Intake — emergency cases never reach Triage or Scheduling
+- **Comprehensive security hardening applied** (see §11.1 below)
+
+### 11.1 Security Hardening (March 6, 2026)
+
+A full security audit was performed across all Python and JavaScript files. The following controls were implemented:
+
+| Category | Controls Applied |
+|----------|-----------------|
+| **Authentication** | HTTP Basic Auth on page entry; credentials from env vars only; fail-closed design |
+| **Input validation** | 16 MB upload limit, 5K char message cap, 100 msg/session, 10K session cap, file type allowlists (photo + audio), lat/lng range check, TTS voice allowlist |
+| **Prompt injection** | `_sanitize_for_prompt()` strips control chars + enforces length limits on all user values interpolated into LLM system prompts; `symptom_area` validated against fixed allowlist |
+| **XSS prevention** | `_escapeHtml()` applied to all user-derived data in clinic panel, vet results, symptom history, and message rendering |
+| **Info disclosure** | Generic error messages to client; `str(e)` details logged server-side only |
+| **Credential hygiene** | `.env` gitignored; `.env.example` contains empty placeholders; `docker-compose.yml` reads secrets from env vars; zero hardcoded credentials in committed code |
+| **Session management** | Two-tier in-memory store (active 1hr / completed 24hr); background cleanup thread; single Gunicorn worker to prevent cross-process session loss |
+| **PDF safety** | Species sanitized to alphanumeric in download filename; prevents path traversal via `Content-Disposition` |
+
+**Not applicable for POC:** SQL injection (no SQL database), CSRF (no cookie auth), rate limiting (deferred to Cloudflare/Render infrastructure layer)
 
 ---
 

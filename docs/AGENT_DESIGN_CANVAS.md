@@ -177,10 +177,15 @@ flowchart TD
 
 ### Memory strategy
 
-- **Session-only memory** across sub-agents: `pet_profile`, `symptoms`, `timeline`, `red_flags`, `triage_tier`, `routing`, `booking_request`, `confidence`. Stored in-memory in the Flask API; no persistent DB for POC.
-- **Client-side persistence** (optional): Pet profiles and symptom history stored in browser `localStorage` for returning users. No PII sent to server; user can clear anytime.
+- **Two-tier session store** (server-side, in-memory):
+  - `sessions` — active intake sessions (1-hour TTL). Holds `pet_profile`, `symptoms`, `timeline`, `red_flags`, `triage_tier`, `routing`, `booking_request`, `confidence`, full message history, and all agent outputs.
+  - `completed_sessions` — finished triages (24-hour TTL). Preserves session data for PDF download window.
+  - Background cleanup thread purges expired sessions every 10 minutes.
+  - Session count capped at 10,000; per-session message limit of 100.
+- **Single-worker Gunicorn** (`--workers 1 --threads 4`): required because sessions are in-memory. Multiple workers would partition sessions across processes, causing session loss.
+- **Client-side persistence** (optional): Pet profiles and symptom history stored in browser `localStorage` for returning users. No PII sent to server; user can clear anytime. All localStorage data is HTML-escaped before DOM rendering to prevent stored XSS.
 - **No long-term storage** of identifying info by default (privacy-by-design); optional anonymized logs for evaluation.
-- Do not store owner identity, phone, or sensitive notes beyond what’s needed for the appointment request.
+- Do not store owner identity, phone, or sensitive notes beyond what is needed for the appointment request.
 
 ---
 
@@ -215,6 +220,55 @@ flowchart TD
 - **Safety:** Strict non-diagnostic language + red-flag escalation; logging for audit.
 - **Privacy:** Avoid storing sensitive details; minimize retention.
 - **Deployment:** Render (recommended) for POC; Docker for local/reproducible runs.
+
+### Security hardening (implemented March 6, 2026)
+
+The POC implements defense-in-depth across all layers:
+
+**Authentication & access control:**
+- HTTP Basic Auth on the page entry point (`/`); credentials read exclusively from environment variables (`AUTH_USERNAME`, `AUTH_PASSWORD`), never hardcoded
+- API endpoints (`/api/*`) exempt from per-request auth — only reachable from the already-authenticated frontend
+- Auth is fail-closed: if env vars are empty, `_check_auth()` always returns `False`
+
+**Input validation (api_server.py):**
+
+| Control | Value | Purpose |
+|---------|-------|---------|
+| `MAX_CONTENT_LENGTH` | 16 MB | Prevents memory exhaustion via large uploads |
+| Message length cap | 5,000 chars | Limits LLM token burn per request |
+| Session message cap | 100 messages | Prevents unbounded conversation history |
+| Session count cap | 10,000 | Prevents DoS via session flooding |
+| Photo MIME allowlist | JPEG, PNG, WebP, GIF | Blocks arbitrary file uploads |
+| Audio MIME allowlist | WebM, WAV, MPEG, OGG, MP4 | Blocks arbitrary file uploads |
+| TTS voice allowlist | alloy, echo, fable, onyx, nova, shimmer | Prevents invalid API calls |
+| Lat/lng range check | ±90° / ±180° | Validates geolocation input |
+| PDF filename sanitization | Alphanumeric only, 20 char max | Prevents path traversal in `Content-Disposition` |
+
+**Prompt injection mitigation (intake_agent.py, guidance_summary.py):**
+- `_sanitize_for_prompt()` strips control characters (`\x00-\x1f`, `\x7f`) and enforces length limits before any user-derived value is interpolated into an LLM system prompt
+- `species` sanitized to 50 chars; `chief_complaint` to 200 chars
+- `symptom_area` validated against a fixed allowlist (gastrointestinal, respiratory, dermatological, injury, urinary) — rejects anything else
+- Photo analysis species sanitized to alphanumeric + spaces, 30 char max
+
+**XSS prevention (frontend/js/app.js):**
+- `_escapeHtml()` utility escapes `& < > " '` in all user-derived data before DOM insertion
+- Applied in: `_showClinicPanel()`, `_renderVetResults()`, `_showSymptomHistory()`, `_formatMessage()`
+- Covers: pet name, species, breed, age, rationale, contributing factors, providers, slot data, vet names/addresses/phones/hours, symptom history entries
+
+**Information disclosure prevention:**
+- All `except` handlers return generic error messages to the client (e.g., "Analysis failed. Please try again.")
+- Internal details (`str(e)`, stack traces, file paths) logged server-side only
+
+**Credential management:**
+- `.env` in `.gitignore` (never committed)
+- `.env.example` contains empty placeholders only — no real credentials
+- `docker-compose.yml` reads n8n password from env var (`${N8N_AUTH_PASSWORD}`)
+- No hardcoded API keys, passwords, or secrets anywhere in the committed codebase
+
+**Not applicable / out of scope for POC:**
+- SQL injection: no SQL database (JSON files only; `json.loads()` for parsing)
+- CSRF: not applicable (no cookie-based session auth; API is stateless with session ID in URL)
+- Rate limiting: deferred to Render/Cloudflare infrastructure layer (documented as future enhancement)
 
 ---
 
