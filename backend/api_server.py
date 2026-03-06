@@ -96,6 +96,13 @@ def require_auth():
     resp.headers['WWW-Authenticate'] = 'Basic realm="PetCare Triage Agent"'
     return resp
 
+
+@app.after_request
+def add_cache_headers(response):
+    if request.path.endswith(('.js', '.css', '.html')):
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return response
+
 # ---------------------------------------------------------------------------
 # Logging Setup
 # ---------------------------------------------------------------------------
@@ -232,7 +239,9 @@ def get_language(lang_code):
 @app.route('/')
 def serve_index():
     """Serve the main frontend page (index.html) from the frontend/ folder."""
-    return send_from_directory(app.static_folder, 'index.html')
+    resp = make_response(send_from_directory(app.static_folder, 'index.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return resp
 
 
 # ===========================================================================
