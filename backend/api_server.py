@@ -35,10 +35,12 @@ import logging
 import tempfile
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory, send_file
+from flask import Flask, request, jsonify, send_from_directory, send_file, make_response
 import requests as http_requests  # For optional webhook POST (Syed Ali Turab, Mar 4, 2026)
 import threading                  # Daemon thread so webhook does not block response
 from dotenv import load_dotenv
+from functools import wraps
+import base64
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -47,6 +49,99 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
+
+# ---------------------------------------------------------------------------
+# HTTP Basic Authentication (Password Protection)
+# ---------------------------------------------------------------------------
+
+# Set these via environment variables or hardcode for Render deployment
+AUTH_USERNAME = os.getenv('AUTH_USERNAME', 'MMAI 891')
+AUTH_PASSWORD = os.getenv('AUTH_PASSWORD', 'P0CD3mo123!')
+AUTH_ENABLED = os.getenv('AUTH_ENABLED', 'true').lower() == 'true'
+
+def check_auth(username, password):
+    """Verify credentials."""
+    return username == AUTH_USERNAME and password == AUTH_PASSWORD
+
+def authenticate():
+    """Send 401 response with WWW-Authenticate header."""
+    return make_response(
+        'Authentication required',
+        401,
+        {'WWW-Authenticate': 'Basic realm="PetCare Triage Agent"'}
+    )
+
+def requires_auth(f):
+    """Decorator to require HTTP Basic Auth."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not AUTH_ENABLED:
+            return f(*args, **kwargs)
+        
+        auth = request.headers.get('Authorization')
+        if not auth:
+            return authenticate()
+        
+        try:
+            # Parse Basic auth header
+            auth_type, auth_string = auth.split(' ', 1)
+            if auth_type.lower() != 'basic':
+                return authenticate()
+            
+            decoded = base64.b64decode(auth_string).decode('utf-8')
+            username, password = decoded.split(':', 1)
+            
+            if not check_auth(username, password):
+                return authenticate()
+            
+            return f(*args, **kwargs)
+        except Exception:
+            return authenticate()
+    
+    return decorated
+
+# Apply auth to all routes except health check and static files
+@app.before_request
+def before_request():
+    """Check auth on all requests except exempt paths."""
+    if not AUTH_ENABLED:
+        return None
+    
+    # Exempt paths that don't need auth
+    exempt_paths = [
+        '/api/health',
+        '/health',
+        '/sw.js',
+        '/manifest.json'
+    ]
+    
+    # Check if current path is exempt
+    if request.path in exempt_paths:
+        return None
+    
+    # Allow static files (frontend assets) - they start with /styles/, /js/, /icons/
+    if any(request.path.startswith(prefix) for prefix in ['/styles/', '/js/', '/icons/', '/images/']):
+        return None
+    
+    # Check for Authorization header
+    auth = request.headers.get('Authorization')
+    if not auth:
+        return authenticate()
+    
+    try:
+        auth_type, auth_string = auth.split(' ', 1)
+        if auth_type.lower() != 'basic':
+            return authenticate()
+        
+        decoded = base64.b64decode(auth_string).decode('utf-8')
+        username, password = decoded.split(':', 1)
+        
+        if not check_auth(username, password):
+            return authenticate()
+    except Exception:
+        return authenticate()
+    
+    return None
 
 # ---------------------------------------------------------------------------
 # Logging Setup
