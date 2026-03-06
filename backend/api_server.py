@@ -226,6 +226,8 @@ def _start_cleanup_timer():
     cleanup_thread.start()
     logger.info("Session cleanup timer started (runs every 10 minutes)")
 
+_start_cleanup_timer()
+
 
 def get_language(lang_code):
     """Return language config, defaulting to English for unsupported codes."""
@@ -1230,8 +1232,5 @@ if __name__ == '__main__':
         ', '.join(f"{v['name']} ({k})" for k, v in SUPPORTED_LANGUAGES.items())
     )
     logger.info(f"PDF export persistence: {COMPLETED_TTL_SECONDS//3600} hours for completed sessions")
-    
-    # Start the session cleanup timer
-    _start_cleanup_timer()
 
     app.run(host='0.0.0.0', port=port, debug=False)

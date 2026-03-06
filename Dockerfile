@@ -34,11 +34,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN mkdir -p backend/logs
 
-EXPOSE ${PORT:-5002}
-
 ENV APP_ENV=production
 ENV PORT=5002
 ENV PYTHONUNBUFFERED=1
+
+EXPOSE ${PORT}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen(f'http://localhost:{__import__(\"os\").getenv(\"PORT\",\"5002\")}/api/health')" || exit 1
