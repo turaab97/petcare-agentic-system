@@ -36,6 +36,7 @@ from datetime import datetime
 import os
 import json
 import openai
+from langsmith.wrappers import wrap_openai
 
 
 def _sanitize_for_prompt(value: str, max_len: int = 200) -> str:
@@ -206,7 +207,7 @@ class GuidanceSummaryAgent:
 
         # ----- LLM-generated owner guidance (Syed Ali Turab, March 4, 2026) -----
         # Produces do/dont/watch_for in session language; no diagnosis or condition names in watch_for.
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = wrap_openai(openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
         lang_code = session.get('language', 'en')
         lang_names = {
             'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',

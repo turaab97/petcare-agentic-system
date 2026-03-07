@@ -34,6 +34,7 @@ import logging
 import os
 import json
 import openai
+from langsmith.wrappers import wrap_openai
 
 # os/json/openai for LLM triage; fallback to _rule_based_triage on error. (Syed Ali Turab, Mar 4, 2026)
 logger = logging.getLogger('petcare.agents.triage')
@@ -85,7 +86,7 @@ class TriageAgent:
 
     def process(self, intake_data: dict, safety_result: dict) -> dict:
         # LLM triage: classify urgency from species, complaint, timeline, eating, energy. No diagnosis names. (Syed Ali Turab, Mar 4, 2026)
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = wrap_openai(openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
         species = (intake_data.get('species') or
                    intake_data.get('pet_profile', {}).get('species', 'unknown'))
         complaint = intake_data.get('chief_complaint', '')
