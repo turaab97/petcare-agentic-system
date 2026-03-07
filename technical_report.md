@@ -182,7 +182,7 @@ The POC includes the following consumer-facing features beyond the core triage p
 | [Vet-AI Symptom Checker](https://www.vet-ai.com/symptomchecker) | Commercial product (165 vet-written algorithms) | Triage workflow design |
 | [SAVSNET / PetBERT](https://github.com/SAVSNET/PetBERT) | Veterinary NLP (500M+ words, 5.1M records) | NLP / coding patterns |
 
-**Data strategy:** All POC data is synthetic. No real PHI. Deployment is **Render**; webhook/n8n is **optional** for POC.
+**Data strategy:** All POC data is synthetic. No real PHI. Deployment is **Render**. LangSmith observability is **live on Render**. N8N webhook integration and Twilio click-to-call are **code-ready** (opt-in via env vars) but not deployed for POC demo.
 
 ---
 
@@ -332,7 +332,7 @@ Based on evaluation results (100% M2 triage accuracy, 100% M4 red-flag detection
 
 1. Integrate with a real clinic scheduling system API (Vet360, PetDesk)
 2. Add persistent session storage (Redis/PostgreSQL) for audit trail and multi-instance deployment
-3. Add SMS/email notification support (webhook layer is implemented; connect to Twilio/SendGrid)
+3. Deploy N8N webhook endpoint and configure Twilio account to activate the code-ready notification and click-to-call features
 4. Conduct usability testing with real clinic receptionists
 5. Calibrate triage thresholds with veterinary advisor feedback
 6. Add clinic verification/override step before sending final response to owner

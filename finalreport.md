@@ -51,7 +51,7 @@ The PetCare agent replaces the phone-call intake with a self-serve conversationa
 
 ### What we intentionally left out
 
-To keep the POC scope tight, we excluded: real clinic scheduling system integration (we use mock appointment data), persistent database storage (sessions live in-memory with a 24-hour window), SMS/email notifications (the webhook layer is built but not connected to Twilio/SendGrid), and formal usability testing with real clinic staff. These are documented as next steps.
+To keep the POC scope tight, we excluded: real clinic scheduling system integration (we use mock appointment data), persistent database storage (sessions live in-memory with a 24-hour window), and formal usability testing with real clinic staff. POC 1.1 added an N8N webhook layer (fires on terminal states if `N8N_WEBHOOK_URL` is set) and a Twilio click-to-call endpoint (activates if Twilio env vars are configured) — both are code-ready but **not deployed** for the POC demo. LangSmith observability tracing is **live on Render**. These limitations and next steps are documented below.
 
 ---
 
@@ -141,7 +141,7 @@ Based on our evaluation — 100% triage accuracy, 100% red-flag detection, 96% t
 | **Red-flag safety** | 100% on known patterns; 1 miss on phrasing variant | Add synonym expansion or fuzzy matching to Safety Gate |
 | **Scheduling** | Mock calendar data | Integrate with real clinic API (Vet360, PetDesk) |
 | **Data persistence** | In-memory sessions (24hr max) | Move to Redis or PostgreSQL for audit trail |
-| **Notifications** | Webhook layer built, not connected | Connect to Twilio (SMS) and SendGrid (email) |
+| **Notifications** | N8N webhook layer built (code-ready, not deployed); Twilio click-to-call built (code-ready, not deployed) | Deploy receiving n8n/Slack endpoint; configure Twilio account for production |
 | **Usability** | Internal testing only | Conduct usability study with real clinic staff and pet owners |
 | **Privacy** | Session-only, no PII, consent banner | Formal privacy impact assessment before clinical deployment |
 
@@ -152,7 +152,7 @@ Based on our evaluation — 100% triage accuracy, 100% red-flag detection, 96% t
 3. **Run a 4–6 week clinic pilot** comparing intake time, re-book rates, and staff satisfaction pre/post
 4. **Formalize orchestration with LangGraph** for production-grade graph visualization and checkpointing
 5. **Add persistent storage** (Redis/PostgreSQL) for multi-instance deployment and audit logging
-6. **Connect SMS/email notifications** via the existing webhook infrastructure
+6. **Deploy N8N webhook endpoint** and **configure Twilio account** to activate the code-ready notification and click-to-call features
 
 ---
 

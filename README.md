@@ -40,8 +40,8 @@ PetCare Agentic System is an AI receptionist framework built to reduce call over
 - **Warm, professional PetCare UI** with teal theme and branded design
 - **Smart intake guardrails** — deterministic pre-LLM screening for abuse, grief, non-pet subjects, and normal animal behavior (7 languages)
 - **Structured diagnostic follow-up** — asks timeline, eating/drinking, energy level before triage (7 languages)
-- **LangSmith observability** — opt-in tracing for all LLM calls and orchestrator pipeline
-- **Twilio click-to-call** — call clinics directly from vet finder via Twilio (opt-in)
+- **LangSmith observability** — tracing for all LLM calls and orchestrator pipeline (**live on Render**)
+- **Twilio click-to-call** — call clinics directly from vet finder via Twilio (code-ready; not deployed for POC demo)
 
 The system is designed with **layered responsibility separation**, **safety constraints**, and **extensibility** in mind.
 
@@ -460,9 +460,9 @@ The following were consulted for domain context and workflow design only. They a
 | **Structured Diagnostic Follow-up** | After species + chief complaint, asks timeline → eating/drinking → energy level (one per turn, max 3). Provides richer context to triage. Localized in 7 languages. |
 | **Booking Confirmation Fix** | Natural slot matching with score-based system (day name, month, time, provider). "Tuesday March 10th 11am with Dr. Patel" now books correctly without requiring "book" keyword. |
 | **Full Language Enforcement** | All orchestrator messages, intake fallbacks, emergency alerts, restart/booking keywords localized in 7 languages via `_UI_STRINGS`, `_GUARDRAIL_STRINGS`, and `_t()` helper. |
-| **LangSmith Observability** | `wrap_openai` on all 3 LLM agents + `@traceable` on orchestrator. Opt-in via `LANGCHAIN_TRACING_V2` env var. |
-| **N8N Webhook Integration** | Fires POST on terminal states (complete/emergency/booked) with full session payload. Opt-in via `N8N_WEBHOOK_URL`. |
-| **Twilio Click-to-Call** | Backend `/api/call` endpoint + frontend "Call via app" button on vet cards. Connects user phone to clinic via Twilio. Opt-in via Twilio env vars. |
+| **LangSmith Observability** | `wrap_openai` on all 3 LLM agents + `@traceable` on orchestrator. **Live on Render** (env vars configured). |
+| **N8N Webhook Integration** | Fires POST on terminal states (complete/emergency/booked) with full session payload. Code-ready; fires if `N8N_WEBHOOK_URL` set — **not deployed for POC demo**. |
+| **Twilio Click-to-Call** | Backend `/api/call` endpoint + frontend "Call via app" button on vet cards. Code-ready; activates if Twilio env vars set — **not deployed for POC demo**. |
 | **Scroll Bug Fix** | Centralized `_scrollToBottom()` helper with instant mode during typing animation. Eliminates CSS smooth-scroll conflicts. |
 
 ### Pet Owner Side (fully functional in POC)
