@@ -300,5 +300,69 @@ Voice testing metrics (if tested):
 
 ---
 
+---
+
+## 11. Security Evaluation (Additional Dimension — March 2026)
+
+Beyond the M1–M6 functional metrics above, a separate security evaluation dimension was conducted to assess the system's resistance to both traditional web vulnerabilities and AI/LLM-specific attacks.
+
+### 11.1 Traditional Web Vulnerability Pentest
+
+**Methodology:** Black-box OSCP-style testing using `backend/security_pentest.py` against the live Render deployment.
+**Scope:** API endpoints, rate limiting, input validation, output encoding, TTS abuse, error disclosure.
+**Reference:** `docs/SECURITY_AUDIT.md` (Sections 1–7)
+
+| Test Category | Result (Pre-remediation) | Post-remediation |
+|---------------|--------------------------|-----------------|
+| Rate limiting — `/api/start` | VULNERABLE (no limit) | Protected (10 req/min) |
+| Rate limiting — `/api/chat` | VULNERABLE (no limit) | Protected (30 req/min) |
+| TTS content policy | VULNERABLE (no filter) | Protected (`_TTS_BLOCKED_PATTERNS`) |
+| Field scrubbing on start | PARTIAL | Protected (whitelist scrubbing) |
+| Error message disclosure | PARTIAL | Protected (generic errors) |
+| Input validation consistency | PARTIAL (5,000 claim vs 2,000 impl.) | Protected (2,000 enforced) |
+
+**Post-remediation security posture:** 9/9 automated pentest checks passed/blocked.
+
+### 11.2 OWASP LLM Top 10 Evaluation
+
+**Methodology:** Black-box LLM-specific testing using `backend/llm_pentest.py` (19 tests).
+**Framework:** OWASP LLM Top 10 (2025 edition).
+**Reference:** `docs/SECURITY_AUDIT.md` Section 8, `backend/llm_security_report.json`
+
+| Category | Test Count | Protected | Partial | Vulnerable |
+|----------|-----------|-----------|---------|------------|
+| LLM01 — Prompt Injection | 5 | 5 | 0 | 0 |
+| LLM02 — Insecure Output Handling | 2 | 1 | 1 | 0 |
+| LLM04 — Model DoS | 3 | 3 | 0 | 0 |
+| LLM06 — Sensitive Info Disclosure | 3 | 3 | 0 | 0 |
+| LLM07 — Insecure Plugin Design | 2 | 1 | 1 | 0 |
+| LLM08 — Excessive Agency | 2 | 1 | 1 | 0 |
+| LLM09 — Overreliance | 2 | 1 | 0 | 1 |
+| **Total** | **19** | **15** | **3** | **1** |
+
+**Overall LLM posture: PARTIAL** — 79% of tests protected; 1 confirmed vulnerability (LLM09-9A: impossible species/symptom combinations accepted).
+
+### 11.3 Security Metrics (Complement to M1–M6)
+
+| Security Metric | Result | Notes |
+|----------------|--------|-------|
+| Traditional pentest pass rate | 9/9 (100%) post-remediation | 6 vulns found and fixed |
+| OWASP LLM Top 10 protection rate | 15/19 (79%) | Posture: PARTIAL |
+| Prompt injection resistance | 5/5 tests blocked | LLM01 category |
+| Model DoS resistance | 3/3 tests blocked | LLM04 category |
+| Sensitive info disclosure resistance | 3/3 tests blocked | LLM06 category |
+| Implausible input acceptance (LLM09-9A) | VULNERABLE → Fixed | Plausibility guard added |
+
+### 11.4 Artifacts
+
+| Artifact | Location |
+|---------|---------|
+| Security Audit (full) | `docs/SECURITY_AUDIT.md` |
+| Traditional pentest script | `backend/security_pentest.py` |
+| OWASP LLM pentest script | `backend/llm_pentest.py` |
+| LLM pentest results JSON | `backend/llm_security_report.json` |
+
+---
+
 *This document should be read alongside `docs/test_scenarios.md` and referenced in
 `technical_report.md` under the Evaluation section.*

@@ -10,6 +10,35 @@ This file tracks the evolution of the PetCare Triage & Smart Booking Agent proje
 
 ---
 
+## Branch: `main` — Security Hardening + OWASP LLM Audit
+
+### 2026-03-07 — Security: Traditional Pentest + OWASP LLM Top 10 Audit + 3 Remediations
+
+**Traditional Web Vulnerability Pentest** (`backend/security_pentest.py`):
+- Black-box OSCP-style pentest against live Render deployment
+- 6 vulnerabilities identified across rate limiting, TTS content policy, field scrubbing, error disclosure, and input validation
+- All 6 remediated — post-pentest re-run: 9/9 tests passed/blocked
+- Full findings documented in `docs/SECURITY_AUDIT.md` (Sections 1–7)
+
+**OWASP LLM Top 10 Assessment** (`backend/llm_pentest.py`):
+- 19 black-box tests across 7 LLM vulnerability categories (LLM01–LLM09)
+- Results: 15 protected, 3 partial, 1 vulnerable — posture: PARTIAL
+- Results artifact saved to `backend/llm_security_report.json`
+- Full findings in `docs/SECURITY_AUDIT.md` Section 8
+
+**Three LLM Remediations Applied:**
+- **LLM09-9A** (`backend/agents/intake_agent.py`): Added `_check_plausibility()` classmethod + `_SPECIES_IMPOSSIBLE_SYMPTOMS` dict to reject anatomically impossible species/symptom combinations (e.g. fish barking); LLM rule 10 added as soft layer
+- **LLM02-2A** (`backend/api_server.py`): Added `_escape_pet_profile()` — HTML-encodes user-supplied fields (`pet_name`, `breed`, `age`, `weight`) at API output boundary in `get_summary()`
+- **LLM07-7B** (`backend/api_server.py`): Added `_TTS_BLOCKED_PATTERNS` (8 compiled regex patterns) and `_tts_policy_check()` — blocks dosage language, prescription verbs, vet identity claims, named diagnoses, named antidotes from TTS synthesis
+
+**Rate Limiting** (`backend/api_server.py`):
+- Flask-Limiter added: 10 req/min on `/api/start`, 30 req/min on `/api/chat`
+- Closes VULN-01 and VULN-02
+
+**Message length cap corrected:** 2,000 chars (was documented as 5,000 in some files — corrected)
+
+---
+
 ## Branch: `main` — POC 1.2 Enhancements
 
 ### 2026-03-07 — POC 1.2: Comprehensive Dynamic Guardrails + Multilingual Species Fix

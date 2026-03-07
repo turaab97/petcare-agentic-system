@@ -128,6 +128,8 @@ This is a life-threatening emergency — urinary blockage in male cats can be fa
 | **Bad routing** — wrong appointment type booked | Medium | Routing rules are clinic-owned JSON (version-controlled); track override reasons to refine rules |
 | **Misleading owner input** — owner underreports symptoms | Medium | Confidence Gate verifies completeness; targeted follow-up questions; "needs human review" flag when confidence is low |
 | **Prompt injection** — malicious input manipulates the LLM | Medium | Input sanitization strips control characters and enforces length limits before any value enters an LLM prompt; symptom categories validated against a fixed allowlist |
+| **Web vulnerability exploitation** — rate limiting, XSS, TTS abuse | Medium | Black-box pentest identified 6 vulnerabilities (March 2026); all remediated: rate limiting (Flask-Limiter), HTML encoding at output boundary, TTS content policy filter. Post-pentest: 9/9 tests blocked. |
+| **LLM-specific attacks** — prompt injection, overreliance, insecure output | Medium | OWASP LLM Top 10 black-box pentest (19 tests): 15 protected, 3 partial, 1 vulnerable. Three remediations applied: plausibility guard for impossible species/symptom combos, HTML-encoding of user fields in summary API, TTS content policy. |
 
 ---
 
@@ -475,7 +477,7 @@ Respond with exactly:
 | Control | Value | Purpose |
 |---------|-------|---------|
 | Max upload size | 16 MB | Prevents memory exhaustion |
-| Message length cap | 5,000 chars | Limits LLM token burn |
+| Message length cap | 2,000 chars | Limits LLM token burn |
 | Session message cap | 100 messages | Prevents unbounded history |
 | Session count cap | 10,000 | Prevents DoS via flooding |
 | Photo MIME allowlist | JPEG, PNG, WebP, GIF | Blocks arbitrary file uploads |
@@ -548,6 +550,73 @@ The POC includes the following consumer-ready features beyond the core triage pi
 | **Evaluation Script** | `backend/evaluate.py` |
 | **Evaluation Results** | `backend/evaluation_results.json` |
 | **Manual Test Runner** | `backend/run_manual_tests.py` |
+| **Security Audit** | `docs/SECURITY_AUDIT.md` |
+| **Traditional Pentest Script** | `backend/security_pentest.py` |
+| **LLM Pentest Script** | `backend/llm_pentest.py` |
+| **LLM Pentest Results** | `backend/llm_security_report.json` |
+
+---
+
+## Appendix H — Security Testing (March 2026)
+
+Two rounds of black-box security testing were conducted against the live Render deployment. Full findings and methodology are in `docs/SECURITY_AUDIT.md`.
+
+### H.1 Traditional Web Vulnerability Pentest
+
+Script: `backend/security_pentest.py` — automated OSCP-style tests against the Flask API.
+
+**6 findings identified and remediated:**
+
+| ID | Finding | Severity | Fix |
+|----|---------|----------|-----|
+| VULN-01 | No rate limiting on `/api/start` | Medium | Flask-Limiter: 10 req/min |
+| VULN-02 | No rate limiting on `/api/chat` | Medium | Flask-Limiter: 30 req/min |
+| VULN-03 | TTS endpoint lacked content policy | Medium | `_TTS_BLOCKED_PATTERNS` regex filter |
+| VULN-04 | Incomplete field scrubbing on `/api/start` | Low | Whitelist-based input scrubbing |
+| VULN-05 | Error messages leaked internal details | Low | Generic error strings to client |
+| VULN-06 | Message length cap inconsistency | Low | Enforced 2,000 char limit |
+
+**Post-remediation re-run: 9/9 tests passed/blocked.**
+
+### H.2 OWASP LLM Top 10 Assessment
+
+Script: `backend/llm_pentest.py` — 19 black-box tests across 7 LLM vulnerability categories.
+Results: `backend/llm_security_report.json`
+
+| Category | Tests | Protected | Partial | Vulnerable |
+|----------|-------|-----------|---------|------------|
+| LLM01 — Prompt Injection | 5 | 5 | 0 | 0 |
+| LLM02 — Insecure Output Handling | 2 | 1 | 1 | 0 |
+| LLM04 — Model DoS | 3 | 3 | 0 | 0 |
+| LLM06 — Sensitive Info Disclosure | 3 | 3 | 0 | 0 |
+| LLM07 — Insecure Plugin Design | 2 | 1 | 1 | 0 |
+| LLM08 — Excessive Agency | 2 | 1 | 1 | 0 |
+| LLM09 — Overreliance | 2 | 1 | 0 | 1 |
+| **Total** | **19** | **15** | **3** | **1** |
+
+**Overall posture: PARTIAL** (79% protected). Notable finding: LLM09-9A — the intake agent accepted anatomically impossible symptoms (fish "barking") without challenge.
+
+**Three LLM remediations implemented:**
+
+| Finding | Remediation | File |
+|---------|-------------|------|
+| LLM09-9A: Impossible species+symptom accepted | `_check_plausibility()` deterministic guard; LLM rule 10 | `backend/agents/intake_agent.py` |
+| LLM02-2A: `pet_name` not HTML-encoded in summary | `_escape_pet_profile()` at API output boundary | `backend/api_server.py` |
+| LLM07-7B: TTS lacked content policy | `_TTS_BLOCKED_PATTERNS` (8 regex patterns) before TTS call | `backend/api_server.py` |
+
+### H.3 Key Security Architecture Decisions
+
+**Why veterinary AI has elevated LLM risk:**
+1. Guardrails prompt (non-diagnostic, no dosage) creates a larger adversarial surface than general chatbots
+2. Emergency routing manipulation (fake emergency → skip triage) could cause real-world harm
+3. Overreliance is structural: owners consult the agent in high-anxiety, time-pressured moments
+4. Voice output (TTS) adds a deepfake/misinformation vector absent in text-only systems
+
+**Defense-in-depth principles applied:**
+- Deterministic safety checks (Safety Gate, plausibility guard) run before LLM output is trusted
+- Guardrails run before any LLM call on every user message
+- Encoding and content filtering applied at output boundary, not storage time
+- Rate limiting on all session-creating endpoints
 
 ---
 

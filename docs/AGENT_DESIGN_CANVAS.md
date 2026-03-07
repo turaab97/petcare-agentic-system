@@ -235,7 +235,7 @@ The POC implements defense-in-depth across all layers:
 | Control | Value | Purpose |
 |---------|-------|---------|
 | `MAX_CONTENT_LENGTH` | 16 MB | Prevents memory exhaustion via large uploads |
-| Message length cap | 5,000 chars | Limits LLM token burn per request |
+| Message length cap | 2,000 chars | Limits LLM token burn per request |
 | Session message cap | 100 messages | Prevents unbounded conversation history |
 | Session count cap | 10,000 | Prevents DoS via session flooding |
 | Photo MIME allowlist | JPEG, PNG, WebP, GIF | Blocks arbitrary file uploads |
@@ -282,10 +282,22 @@ The POC implements defense-in-depth across all layers:
 - `docker-compose.yml` reads n8n password from env var (`${N8N_AUTH_PASSWORD}`)
 - No hardcoded API keys, passwords, or secrets anywhere in the committed codebase
 
+**Rate limiting (Flask-Limiter):**
+- `/api/start` capped at **10 sessions/minute** per IP (prevents session-flood DoS)
+- `/api/chat` capped at **30 requests/minute** per IP (prevents message-flood DoS)
+- Returns HTTP 429 with `Retry-After` header on violation
+
+**HTML-encoding at output boundary (api_server.py):**
+- `_escape_pet_profile()` applies `html.escape(quote=True)` to all user-supplied fields (`pet_name`, `breed`, `age`, `weight`) before inclusion in `get_summary()` JSON responses
+- Encoding at output time (not storage) keeps raw values available for LLM prompts
+
+**TTS content policy (`_TTS_BLOCKED_PATTERNS`):**
+- 8 pre-compiled regex patterns block dosage language, prescription verbs, vet identity claims, named diagnoses, and named antidotes from being synthesized as voice output
+- Returns HTTP 400 if content policy violated; no TTS call made
+
 **Not applicable / out of scope for POC:**
 - SQL injection: no SQL database (JSON files only; `json.loads()` for parsing)
 - CSRF: not applicable (no cookie-based session auth; API is stateless with session ID in URL)
-- Rate limiting: deferred to Render/Cloudflare infrastructure layer (documented as future enhancement)
 
 ---
 
@@ -347,6 +359,54 @@ Run a 4–6 week pilot: compare average intake time, repeat calls, and re-book r
 - **Under-triage:** Conservative red-flag rules + mandatory escalation messaging; Safety Gate runs before triage.
 - **Over-triage:** Calibrate thresholds using scenario tests; allow receptionist override; document in report.
 - **Bad routing:** Clinic-owned routing map in version control (`clinic_rules.json`); track override reasons and refine rules.
+
+---
+
+## STEP 6: Security Pentest Results (March 2026)
+
+### Traditional Web Vulnerability Pentest
+
+A black-box OSCP-style pentest was conducted against the live Render deployment (`https://petcare-agentic-system.onrender.com`) using `backend/security_pentest.py`. Results and full remediation details are in `docs/SECURITY_AUDIT.md`.
+
+**Summary (6 findings, all remediated):**
+
+| ID | Vulnerability | Severity | Status |
+|----|---------------|----------|--------|
+| VULN-01 | Rate limiting absent on `/api/start` | Medium | **Fixed** — Flask-Limiter 10 req/min |
+| VULN-02 | Rate limiting absent on `/api/chat` | Medium | **Fixed** — Flask-Limiter 30 req/min |
+| VULN-03 | TTS endpoint lacked content policy | Medium | **Fixed** — `_TTS_BLOCKED_PATTERNS` regex filter |
+| VULN-04 | `/api/start` field scrubbing incomplete | Low | **Fixed** — whitelist-based scrubbing |
+| VULN-05 | Error messages leaked internal details | Low | **Fixed** — generic error strings server-side |
+| VULN-06 | Input validation inconsistency | Low | **Fixed** — message cap 2,000 chars enforced |
+
+**Post-pentest security posture:** 9/9 tests passed/blocked on re-run.
+
+### OWASP LLM Top 10 Assessment (2025)
+
+A second black-box pentest specifically targeting AI/LLM vulnerabilities was conducted using `backend/llm_pentest.py` (19 tests, 7 categories). Results saved to `backend/llm_security_report.json`. Full findings in `docs/SECURITY_AUDIT.md` Section 8.
+
+**Summary (19 tests):**
+
+| Category | Tests | Protected | Partial | Vulnerable |
+|----------|-------|-----------|---------|------------|
+| LLM01 — Prompt Injection | 5 | 5 | 0 | 0 |
+| LLM02 — Insecure Output Handling | 2 | 1 | 1 | 0 |
+| LLM04 — Model DoS | 3 | 3 | 0 | 0 |
+| LLM06 — Sensitive Info Disclosure | 3 | 3 | 0 | 0 |
+| LLM07 — Insecure Plugin Design | 2 | 1 | 1 | 0 |
+| LLM08 — Excessive Agency | 2 | 1 | 1 | 0 |
+| LLM09 — Overreliance | 2 | 1 | 0 | 1 |
+| **Total** | **19** | **15** | **3** | **1** |
+
+**Overall posture: PARTIAL** (79% protected, 1 confirmed vulnerability)
+
+**Three LLM remediations implemented:**
+
+| Finding | Fix | Location |
+|---------|-----|----------|
+| LLM09-9A: Implausible species+symptom accepted (fish barking) | `_check_plausibility()` deterministic guard + LLM rule 10 | `backend/agents/intake_agent.py` |
+| LLM02-2A: User-supplied `pet_name` not HTML-encoded in summary | `_escape_pet_profile()` at output boundary | `backend/api_server.py` |
+| LLM07-7B: TTS endpoint lacked content policy | `_TTS_BLOCKED_PATTERNS` regex filter before TTS API call | `backend/api_server.py` |
 
 ---
 

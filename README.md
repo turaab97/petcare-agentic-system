@@ -506,12 +506,20 @@ The following were consulted for domain context and workflow design only. They a
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Docker + Gunicorn (single-worker + threads) | ✅ Live on Render | Dockerfile tested and deployed |
-| HTTP Basic Auth (password protection) | ✅ Live on Render | Credentials via env vars only, never hardcoded |
+| HTTP Basic Auth (password protection) | ✅ Live on Render | Credentials via env vars only, never hardcoded. Applied to all `/api/*` routes post-pentest (VULN-01/02 fix). |
+| Rate limiting (flask-limiter) | ✅ Live on Render | Per-endpoint limits: 10/min session start, 20/min messages, 5/min voice/photo, 3/min Twilio. Global: 60/min. (VULN-06 fix) |
 | Two-tier session store (active 1hr / completed 24hr) | ✅ Live on Render | PDF downloads persist for 24 hours |
-| Security hardening (input validation, XSS, prompt injection) | ✅ Live on Render | See [AGENT_DESIGN_CANVAS](docs/AGENT_DESIGN_CANVAS.md) for full audit |
+| Input validation | ✅ Live on Render | MAX_MESSAGE_LENGTH=2,000 chars (reduced from 5,000 post-pentest); photo/audio MIME allowlists; lat/lng range check |
+| Field scrubbing in summary API | ✅ Live on Render | `agent_outputs`, `evaluation_metrics`, `messages` removed from `/api/session/<id>/summary` response (VULN-05 fix) |
+| HTML entity encoding of pet_profile fields | ✅ Live on Render | `pet_name`, `breed`, `age`, `weight` HTML-escaped at output boundary in summary API (LLM02-2A fix) |
+| TTS content policy filter | ✅ Live on Render | 8 compiled regex patterns block prescription/dosage language, vet identity claims, named diagnoses before OpenAI TTS call (LLM07-7B fix) |
+| Intake plausibility guard | ✅ Live on Render | Deterministic species+symptom impossibility check blocks nonsense inputs (e.g. fish barking); LLM also instructed via rule 10 (LLM09-9A fix) |
+| Comprehensive guardrails (guardrails.py) | ✅ Live on Render | 8 categories, 181-case test suite, OWASP LLM Top 10 coverage, 7-language patterns |
+| XSS prevention (frontend) | ✅ Live on Render | `_escapeHtml()` applied to all user-derived data before DOM insertion |
 | Cache-busting for frontend assets | ✅ Live on Render | Versioned JS/CSS imports, no-cache headers |
 | End-to-end integration testing (evaluate.py) | ✅ Passing | 6 scenarios, 100% M2/M4 |
-| Unit / agent-level testing | 📋 Planned | Post-POC |
+| **Traditional web pentest** | ✅ Complete | 6 vulnerabilities found and remediated — see [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
+| **OWASP LLM Top 10 pentest** | ✅ Complete | 19 tests across 7 categories; 15/19 protected; posture: PARTIAL — see [`docs/SECURITY_AUDIT.md §8`](docs/SECURITY_AUDIT.md) |
 | Architecture & documentation | ✅ Complete | All docs updated to match POC |
 
 ---
@@ -551,6 +559,7 @@ Full detail: [NEXT_STEPS.md](NEXT_STEPS.md).
 | **Phase 8** | Frontend redesign: professional PetCare theme with warm teal palette | ✅ Complete |
 | **Phase 9** | Report, video & final polish | ✅ Complete |
 | **Phase 10** | POC 1.1 — guardrails, diagnostic intake, i18n, LangSmith, N8N, Twilio, UX fixes | ✅ Complete |
+| **Phase 11** | Security: black-box pentest (6 vulns found + fixed), OWASP LLM Top 10 audit (19 tests), 3 LLM remediations | ✅ Complete |
 
 See [PROJECT_PLAN.md](PROJECT_PLAN.md) for full sprint-by-sprint plan with risk register.
 
@@ -722,6 +731,10 @@ The system is built to be:
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | Sprint-by-sprint project plan |
 | [NEXT_STEPS.md](NEXT_STEPS.md) | **Build order:** wire API → orchestrator, unblock Intake, smoke test, validate scenarios |
 | [technical_report.md](technical_report.md) | Technical report (assignment deliverable) |
+| [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | **Security Audit** — black-box pentest (6 vulns found, all remediated) + OWASP LLM Top 10 assessment (19 tests, posture: PARTIAL) |
+| [backend/security_pentest.py](backend/security_pentest.py) | Traditional web vulnerability pentest script (OSCP-style, automated) |
+| [backend/llm_pentest.py](backend/llm_pentest.py) | OWASP LLM Top 10 pentest script (19 tests against live Render URL) |
+| [backend/llm_security_report.json](backend/llm_security_report.json) | LLM pentest results artifact (15/19 protected, posture: PARTIAL) |
 
 ---
 
