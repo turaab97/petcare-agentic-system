@@ -31,6 +31,7 @@ import os
 import sys
 import io
 import re
+import html as _html  # LLM02-2A: HTML entity encoding for API output sanitisation
 import json
 import uuid
 import logging
@@ -77,6 +78,124 @@ MAX_SESSIONS = 10000
 ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
 ALLOWED_AUDIO_TYPES = {'audio/webm', 'audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/mp4'}
 VALID_TTS_VOICES = {'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'}
+
+# ---------------------------------------------------------------------------
+# LLM02-2A: Output encoding — sanitise user-supplied pet profile fields
+# ---------------------------------------------------------------------------
+# The intake agent stores pet_name, breed, age, and weight verbatim from the
+# owner's chat messages.  These are returned in the /api/session/<id>/summary
+# JSON response.  If the frontend renders any of these fields via innerHTML
+# rather than textContent, an owner who typed a name like
+#   <script>alert('xss')</script>
+# would trigger stored XSS in every browser that loads the summary.
+#
+# Mitigation: HTML-entity-encode all user-supplied free-text fields before
+# they leave the server.  This converts < → &lt;, > → &gt;, " → &quot; etc.,
+# making the values safe regardless of how the frontend renders them.
+# 'species' is intentionally excluded: it is validated against a known word
+# list by the intake agent and is not a free-text injection vector.
+# ---------------------------------------------------------------------------
+_PET_PROFILE_USER_FIELDS = frozenset({'pet_name', 'breed', 'age', 'weight'})
+
+
+def _escape_pet_profile(profile: dict) -> dict:
+    """
+    Return a copy of pet_profile with user-supplied string fields
+    HTML-entity-encoded.
+
+    Only fields in _PET_PROFILE_USER_FIELDS are encoded; all other fields
+    (including 'species', which is validated) are passed through unchanged.
+    Non-string values are also passed through unchanged.
+
+    Called by get_summary() immediately before building the JSON response —
+    encoding happens at the output boundary, not at storage time, so the raw
+    values remain available for LLM prompts that need to read them.
+    """
+    result = {}
+    for key, value in profile.items():
+        if key in _PET_PROFILE_USER_FIELDS and isinstance(value, str):
+            # quote=True also escapes single and double quotes, preventing
+            # attribute injection if a value is embedded in an HTML attribute.
+            result[key] = _html.escape(value, quote=True)
+        else:
+            result[key] = value
+    return result
+
+
+# ---------------------------------------------------------------------------
+# LLM07-7B: TTS content policy — block medical impersonation in synthesized audio
+# ---------------------------------------------------------------------------
+# The /api/voice/synthesize endpoint uses OpenAI TTS to convert arbitrary text
+# to MP3 audio.  Even with session-gating and rate limiting (VULN-03 fix), a
+# session-authenticated user can request synthesis of text that impersonates a
+# veterinarian or contains prescription-level medical instructions.  The
+# resulting audio sounds authoritative and can be distributed as "vet advice".
+#
+# These regex patterns block the three highest-risk content categories:
+#   1. Prescription / dosage language   ("give 50mg of amoxicillin twice daily")
+#   2. Veterinarian identity claims     ("I am Dr. Smith", "as your veterinarian")
+#   3. Named diagnoses in first-person  ("your dog has parvovirus")
+#   4. Named antidotes / treatments     ("administer activated charcoal now")
+#
+# Design choices:
+#   • Conservative patterns only — we never block normal guidance language
+#     ("keep your pet hydrated", "watch for changes").
+#   • Compiled once at module load; matching cost per TTS request is negligible.
+#   • This is a server-side last line of defence; it does not replace the
+#     guardrails middleware or the rate limiter.
+# ---------------------------------------------------------------------------
+_TTS_BLOCKED_PATTERNS = [
+    # Dosage: a digit followed immediately by a unit of measure.
+    # Matches: "50mg", "2.5 ml", "10 cc", "500 mcg", "100 milligrams"
+    r'\b\d+(?:\.\d+)?\s*(?:mg|ml|cc|mcg|milligrams?|milliliters?)\b',
+
+    # Prescription verbs: prescribe, prescribed, prescribing, prescription
+    r'\bprescri(?:be|bed|bing|ption)\b',
+
+    # "give [pet pronoun/name] [number]" — classic dosage instruction pattern
+    r'\bgive\s+(?:him|her|it|your\s+\w+)\s+\d',
+
+    # "administer" followed within 30 chars by a digit
+    r'\badminister\b.{0,30}\d',
+
+    # Veterinarian identity claims: "I am Dr. X", "this is Dr. X",
+    # "speaking as a veterinarian", "as your vet"
+    r'\b(?:i\s+am|this\s+is)\s+(?:dr\.?\s+\w+|a\s+(?:licensed\s+)?veterinarian)\b',
+    r'\b(?:as|speaking\s+as)\s+(?:your\s+)?(?:vet(?:erinarian)?|doctor|dr\.?)\b',
+
+    # Named-diagnosis delivery: "your [pet] has [condition-type word]"
+    r'\byour\s+(?:pet|dog|cat|animal|[a-z]+)\s+has\s+(?:\w+\s+){0,3}'
+    r'(?:disease|syndrome|virus|infection|disorder|condition|cancer|tumou?r)\b',
+
+    # Named antidotes / emergency treatments that only a vet should administer
+    r'\b(?:vitamin\s+k[12]?|atropine|apomorphine|activated\s+charcoal|'
+    r'naloxone|pralidoxime|ffp|fresh\s+frozen\s+plasma)\b',
+]
+
+# Pre-compile all patterns at module load time (re.IGNORECASE covers mixed-case input).
+_TTS_COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _TTS_BLOCKED_PATTERNS]
+
+
+def _tts_policy_check(text: str) -> tuple[bool, str]:
+    """
+    Check text against the TTS content policy.
+
+    Returns:
+        (allowed: bool, reason: str)
+        allowed=False  → text matched a blocked pattern; do not synthesize.
+        reason         → human-readable description of the violation (logged,
+                         not sent to the client).
+
+    Called at the top of synthesize_speech(), before any OpenAI API call.
+    """
+    for pattern in _TTS_COMPILED_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return False, (
+                f"TTS policy violation — pattern '{pattern.pattern[:60]}' "
+                f"matched at position {match.start()}: '{match.group()[:40]}'"
+            )
+    return True, ''
 
 # ---------------------------------------------------------------------------
 # HTTP Basic Authentication (credentials from environment variables ONLY)
@@ -528,11 +647,17 @@ def get_summary(session_id):
     sched_out  = out.get('scheduling', {}).get('output', {})
     guidance   = out.get('guidance_summary', {}).get('output', {})
     safety_out = out.get('safety_gate', {}).get('output', {})
+
+    # LLM02-2A: HTML-encode user-supplied pet_profile fields before they leave
+    # the server.  Encoding happens here (output boundary) so the raw values
+    # remain available in session state for LLM prompts that read them.
+    safe_pet_profile = _escape_pet_profile(session.get('pet_profile', {}))
+
     return jsonify({
         'session_id': session_id,
         'state': session['state'],
         'language': session.get('language', 'en'),
-        'pet_profile': session.get('pet_profile', {}),
+        'pet_profile': safe_pet_profile,
         'triage_result': {
             'urgency_tier': triage_out.get('urgency_tier'),
             'urgency_label': triage_out.get('urgency_label'),
@@ -1234,6 +1359,21 @@ def synthesize_speech():
     session_id = (data.get('session_id') or '').strip()
     if not session_id or session_id not in sessions:
         return jsonify({'error': 'Valid session_id required for voice synthesis'}), 400
+
+    # LLM07-7B: TTS content policy — block medical impersonation / prescription
+    # language before the text reaches the OpenAI TTS API.  A session-gated but
+    # malicious caller could otherwise synthesize audio that sounds like
+    # authoritative veterinary advice (dosage instructions, diagnosis delivery,
+    # vet identity claims), creating a deepfake distribution pathway.
+    # _tts_policy_check() applies conservative regex patterns; normal guidance
+    # language passes through unaffected.
+    allowed, policy_reason = _tts_policy_check(text)
+    if not allowed:
+        logger.warning(
+            "TTS request blocked by content policy for session %s: %s",
+            session_id[:8], policy_reason
+        )
+        return jsonify({'error': 'Text contains content not permitted for voice synthesis.'}), 400
 
     try:
         from openai import OpenAI

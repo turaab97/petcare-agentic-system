@@ -78,6 +78,44 @@ class IntakeAgent:
         '鱼', '马', '羊', '猪', '牛', '鸭', '鹅', '龟', '蛇', '蜥蜴',
         '鹦鹉', '仓鼠', '雪貂', '鼠', '青蛙', '鸡', '公鸡', '宠物', '动物',
     }
+    # ── LLM09-9A: Plausibility dictionary ────────────────────────────────────
+    # Maps lowercase species names to symptom substrings that are anatomically
+    # impossible for that species.  Used by _check_plausibility() to catch
+    # nonsense inputs before the LLM pipeline silently accepts them.
+    #
+    # Design notes:
+    #   • Kept deliberately narrow — we only flag clear anatomical
+    #     impossibilities, never ambiguous edge cases.  A false positive
+    #     (wrongly blocking a real symptom) is more harmful than a false
+    #     negative here, because it would interrupt a legitimate triage.
+    #   • The LLM system prompt (rule 10) is also updated to flag impossible
+    #     symptoms, but LLMs can silently accept nonsense — this deterministic
+    #     layer is the guaranteed fallback.
+    #   • Patterns are lowercase substrings matched against the lowercased
+    #     chief_complaint.  Whole-word matching is not required because the
+    #     false-positive risk for partial matches is negligible (e.g. "growling"
+    #     contains "grow", but "growling" is specific enough).
+    _SPECIES_IMPOSSIBLE_SYMPTOMS: dict[str, list[str]] = {
+        # Fish have no lungs, no vocal cords, and no legs.
+        'fish': [
+            'barking', 'bark', 'growling', 'growl', 'meowing', 'meow',
+            'broken leg', 'broken arm', 'limping', 'limp',
+            'sneezing', 'sneeze', 'coughing', 'cough',
+            'fur loss', 'hair loss', 'scratching fur',
+        ],
+        # Snakes have no limbs and no external ears.
+        'snake': [
+            'barking', 'bark', 'meowing', 'meow', 'limping', 'limp',
+            'broken leg', 'paw', 'fur loss', 'hair loss',
+        ],
+        # Turtles / tortoises have no fur or hair.
+        'turtle':   ['barking', 'bark', 'meowing', 'meow', 'fur loss', 'hair loss'],
+        'tortoise': ['barking', 'bark', 'meowing', 'meow', 'fur loss', 'hair loss'],
+        # Frogs and toads have no fur and no barking/meowing capability.
+        'frog':     ['barking', 'bark', 'meowing', 'meow', 'fur loss', 'hair loss', 'broken leg'],
+        'toad':     ['barking', 'bark', 'meowing', 'meow', 'fur loss', 'hair loss', 'broken leg'],
+    }
+
     _NOISE_PHRASES = {
         # English
         'i have a', 'i got a', 'my pet is', 'we have a', 'it is a',
@@ -115,6 +153,36 @@ class IntakeAgent:
             text = text.replace(species.lower(), '')
         cleaned = text.strip(' .,;!?')
         return len(cleaned) >= 3
+
+    @classmethod
+    def _check_plausibility(cls, species: str, complaint: str) -> tuple[bool, str]:
+        """
+        Check whether the symptom description is anatomically plausible for
+        the stated species.
+
+        Returns:
+            (is_plausible: bool, matched_term: str)
+            is_plausible=False  → an impossible symptom was found.
+            matched_term        → the exact impossible substring detected
+                                  (used for logging and the follow-up question).
+
+        This is the deterministic half of the LLM09-9A fix.  The LLM system
+        prompt (rule 10) is the first line of defence, but LLMs can silently
+        accept biologically nonsensical input.  This method is the guaranteed
+        fallback: it runs on every call to process() after the complaint is
+        extracted and before intake_complete is allowed to be True.
+
+        Only entries in _SPECIES_IMPOSSIBLE_SYMPTOMS are checked.  Unknown
+        species (e.g. 'chinchilla') simply return (True, '') — better to let
+        an unusual case through than to block a legitimate triage.
+        """
+        if not species or not complaint:
+            return True, ''
+        c = complaint.lower()
+        for term in cls._SPECIES_IMPOSSIBLE_SYMPTOMS.get(species.lower().strip(), []):
+            if term in c:
+                return False, term
+        return True, ''
 
     # Localized fallback questions per language
     _FALLBACK_ASK_SPECIES = {
@@ -205,6 +273,7 @@ HARD RULES — never violate:
 7. Respond ONLY with valid JSON. No markdown fences. No text outside the JSON.
 8. NEVER GUESS the species. If the user has NOT explicitly mentioned an animal type, leave species as empty string. Do NOT infer "dog" or any species from greetings, random text, or repeated messages.
 9. If the user message does not contain any pet or health information (e.g. greetings, gibberish, copied system text), set all fields to empty strings, intake_complete to false, and ask what type of pet they have.
+10. PLAUSIBILITY CHECK — if the species and complaint are BOTH known and the symptom is anatomically impossible for that species (e.g. a fish barking, a fish with a broken leg, a snake with fur, a turtle coughing), do NOT set intake_complete to true. Instead, set intake_complete to false and add a follow_up_question asking the owner to describe what they actually observed in more specific terms. Example: "I want to make sure I understand — fish don't vocalize or have legs. Could you describe what you're observing more specifically, such as changes in swimming behaviour, appearance, or breathing?"
 
 Already known from prior messages — do NOT ask for these again:
   species: "{known_species}"
@@ -327,6 +396,33 @@ dermatological, injury, urinary, neurological, behavioral, or empty string."""
             if final_species and final_complaint and self._is_real_complaint(final_complaint, final_species):
                 intake_complete = True
                 follow_up_questions = []
+
+            # ── LLM09-9A: Plausibility guard (deterministic layer) ────────────
+            # The LLM was instructed via rule 10 to flag impossible symptoms,
+            # but empirical testing showed it silently accepted e.g. a fish
+            # barking.  This deterministic check is the guaranteed fallback:
+            # if the species+complaint combination is anatomically impossible,
+            # we override intake_complete and inject a clarifying question.
+            #
+            # We only override when intake_complete would be True — there is
+            # no point adding a plausibility question if we still need the
+            # species or chief_complaint.
+            if intake_complete:
+                plausible, impossible_term = self._check_plausibility(
+                    final_species, final_complaint
+                )
+                if not plausible:
+                    intake_complete = False
+                    follow_up_questions = [
+                        f"I want to make sure I understand — some of the details "
+                        f"you described seem unusual for a {final_species}. Could "
+                        f"you describe what you're actually observing? For example, "
+                        f"any changes in movement, appearance, breathing, or eating?"
+                    ]
+                    logger.warning(
+                        "Plausibility flag: species='%s' impossible_symptom='%s'",
+                        final_species, impossible_term
+                    )
 
             if not intake_complete and not follow_up_questions:
                 if not final_species:
