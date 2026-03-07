@@ -595,6 +595,7 @@ let _currentTtsAudio = null;
 let _ttsGeneration = 0;
 let currentLang = 'en';
 let lastTriageState = null;  // tracks post-triage state for action buttons
+let _twilioEnabled = false;  // set on init by /api/twilio/status
 const _shownBreeds = new Set();
 
 const BREED_RISKS = {
@@ -658,6 +659,7 @@ async function initApp() {
     await startSession();
     _loadPetProfile();
     _showSymptomHistory();
+    _checkTwilioStatus();
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -1706,6 +1708,10 @@ function _renderVetResults(vets) {
             ? `<a href="tel:${_escapeHtml(vet.phone)}" class="vet-call-btn">📞 ${callText} ${_escapeHtml(vet.phone)}</a>`
             : `<span class="vet-no-phone">${t('noPhone')}</span>`;
 
+        const twilioBtn = (vet.phone && _twilioEnabled)
+            ? `<button onclick="_twilioCall('${_escapeHtml(vet.phone)}')" class="vet-call-btn twilio-call-btn">📲 ${callText} via app</button>`
+            : '';
+
         const websiteLink = vet.website
             ? `<a href="${vet.website}" target="_blank" rel="noopener" class="vet-website-btn">${t('website')}</a>`
             : '';
@@ -1730,6 +1736,7 @@ function _renderVetResults(vets) {
                 ${hoursInfo}
                 <div class="vet-actions">
                     ${callBtn}
+                    ${twilioBtn}
                     ${mapsLink}
                     ${websiteLink}
                 </div>
@@ -1743,6 +1750,48 @@ function _renderVetResults(vets) {
     wrapper.innerHTML = html;
     container.appendChild(wrapper);
     _scrollToBottom();
+}
+
+// ---------------------------------------------------------------------------
+// Twilio Click-to-Call
+// ---------------------------------------------------------------------------
+
+async function _checkTwilioStatus() {
+    try {
+        const res = await fetch('/api/twilio/status');
+        const data = await res.json();
+        _twilioEnabled = !!data.enabled;
+    } catch (_) {
+        _twilioEnabled = false;
+    }
+}
+
+async function _twilioCall(clinicPhone) {
+    const promptText = currentLang === 'en' ? 'Enter your phone number (with country code, e.g. +1234567890):' :
+                       currentLang === 'fr' ? 'Entrez votre numéro de téléphone (avec indicatif, ex: +1234567890) :' :
+                       currentLang === 'es' ? 'Ingrese su número de teléfono (con código de país, ej: +1234567890):' :
+                       'Enter your phone number (with country code, e.g. +1234567890):';
+    const userPhone = prompt(promptText);
+    if (!userPhone) return;
+
+    try {
+        const res = await fetch('/api/call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clinic_phone: clinicPhone, user_phone: userPhone.trim() })
+        });
+        const data = await res.json();
+        if (data.error) {
+            addMessage(data.error, 'assistant');
+        } else {
+            addMessage(currentLang === 'en' ? 'Calling your phone now — answer to be connected to the clinic.' :
+                       currentLang === 'fr' ? 'Appel en cours — répondez pour être connecté à la clinique.' :
+                       currentLang === 'es' ? 'Llamando a tu teléfono — contesta para ser conectado con la clínica.' :
+                       'Calling your phone now — answer to be connected to the clinic.', 'assistant');
+        }
+    } catch (_) {
+        addMessage(t('sendError'), 'assistant');
+    }
 }
 
 // ---------------------------------------------------------------------------

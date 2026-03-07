@@ -5,3 +5,4 @@ openai
 requests
 fpdf2
 langsmith
+twilio
