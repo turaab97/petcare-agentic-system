@@ -1216,6 +1216,57 @@ def synthesize_speech():
 
 
 # ===========================================================================
+# Twilio Click-to-Call (optional)
+# Enabled when TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER
+# are set.  Initiates an outbound call that connects the user's phone to the
+# clinic.  The user's phone rings first; once answered, the clinic is dialled.
+# ===========================================================================
+
+def _twilio_enabled():
+    return all(os.getenv(k, '').strip() for k in (
+        'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER'))
+
+@app.route('/api/twilio/status', methods=['GET'])
+def twilio_status():
+    return jsonify({'enabled': _twilio_enabled()})
+
+@app.route('/api/call', methods=['POST'])
+def initiate_call():
+    if not _twilio_enabled():
+        return jsonify({'error': 'Twilio is not configured on this server.'}), 503
+
+    data = request.get_json(silent=True) or {}
+    clinic_phone = (data.get('clinic_phone') or '').strip()
+    user_phone = (data.get('user_phone') or '').strip()
+
+    phone_re = re.compile(r'^\+?[1-9]\d{6,14}$')
+    if not phone_re.match(re.sub(r'[\s\-() ]', '', clinic_phone)):
+        return jsonify({'error': 'Invalid clinic phone number.'}), 400
+    if not phone_re.match(re.sub(r'[\s\-() ]', '', user_phone)):
+        return jsonify({'error': 'Invalid user phone number.'}), 400
+
+    try:
+        from twilio.rest import Client as TwilioClient
+        client = TwilioClient(
+            os.getenv('TWILIO_ACCOUNT_SID'),
+            os.getenv('TWILIO_AUTH_TOKEN')
+        )
+        call = client.calls.create(
+            to=user_phone,
+            from_=os.getenv('TWILIO_FROM_NUMBER'),
+            twiml=f'<Response><Say>Connecting you to the veterinary clinic now.</Say><Dial>{clinic_phone}</Dial></Response>'
+        )
+        logger.info("Twilio call initiated: sid=%s to=%s clinic=%s", call.sid, user_phone, clinic_phone)
+        return jsonify({'status': 'calling', 'call_sid': call.sid})
+    except ImportError:
+        logger.error("twilio package not installed")
+        return jsonify({'error': 'Twilio SDK not installed on server.'}), 503
+    except Exception as exc:
+        logger.error("Twilio call failed: %s", exc)
+        return jsonify({'error': 'Failed to initiate call. Please try again.'}), 500
+
+
+# ===========================================================================
 # Server Entry Point
 # ===========================================================================
 
