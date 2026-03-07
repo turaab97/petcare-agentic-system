@@ -37,6 +37,7 @@ class IntakeAgent:
         self.agent_name = 'intake'
 
     _SPECIES_WORDS = {
+        # English
         'dog', 'cat', 'bird', 'rabbit', 'hamster', 'reptile', 'fish',
         'parrot', 'puppy', 'kitten', 'bunny', 'turtle', 'snake', 'lizard',
         'guinea pig', 'gerbil', 'ferret', 'pet', 'animal',
@@ -44,10 +45,58 @@ class IntakeAgent:
         'horse', 'pony', 'goat', 'sheep', 'pig', 'cow', 'calf',
         'hedgehog', 'chinchilla', 'rat', 'mouse', 'frog', 'toad',
         'cockatiel', 'budgie', 'canary', 'macaw', 'cockatoo', 'finch',
+        # French
+        'chien', 'chienne', 'chiot', 'chat', 'chatte', 'chaton',
+        'oiseau', 'lapin', 'poisson', 'cheval', 'poney', 'chèvre',
+        'mouton', 'cochon', 'vache', 'veau', 'canard', 'oie', 'dinde',
+        'tortue', 'serpent', 'lézard', 'perroquet', 'hamster', 'furet',
+        'souris', 'grenouille', 'hérisson', 'animal de compagnie',
+        # Spanish
+        'perro', 'perra', 'perrito', 'cachorro', 'gato', 'gata', 'gatito',
+        'pájaro', 'ave', 'conejo', 'pez', 'caballo', 'yegua', 'cabra',
+        'oveja', 'cerdo', 'vaca', 'ternero', 'pato', 'ganso', 'pavo',
+        'tortuga', 'serpiente', 'lagarto', 'loro', 'hámster', 'hurón',
+        'ratón', 'rana', 'erizo', 'mascota',
+        # Hindi
+        'कुत्ता', 'कुत्ती', 'पिल्ला', 'बिल्ली', 'बिल्ला', 'बिल्ली का बच्चा',
+        'पक्षी', 'चिड़िया', 'खरगोश', 'मछली', 'घोड़ा', 'घोड़ी', 'टट्टू',
+        'बकरी', 'बकरा', 'भेड़', 'सूअर', 'गाय', 'बछड़ा', 'बत्तख', 'हंस',
+        'कछुआ', 'सांप', 'छिपकली', 'तोता', 'चूहा', 'मेंढक', 'मुर्गी',
+        'मुर्गा', 'जानवर', 'पालतू', 'पालतू जानवर',
+        # Urdu
+        'کتا', 'کتی', 'بلی', 'بلا', 'پرندہ', 'خرگوش', 'مچھلی',
+        'گھوڑا', 'گھوڑی', 'بکری', 'بکرا', 'بھیڑ', 'سور', 'گائے',
+        'بچھڑا', 'بطخ', 'کچھوا', 'سانپ', 'چھپکلی', 'طوطا', 'چوہا',
+        'مینڈک', 'مرغی', 'مرغا', 'جانور', 'پالتو', 'پالتو جانور',
+        # Arabic
+        'كلب', 'قطة', 'قط', 'طائر', 'عصفور', 'أرنب', 'سمكة', 'حصان',
+        'فرس', 'ماعز', 'خروف', 'غنم', 'خنزير', 'بقرة', 'عجل', 'بطة',
+        'أوزة', 'سلحفاة', 'ثعبان', 'سحلية', 'ببغاء', 'هامستر',
+        'فأر', 'ضفدع', 'دجاجة', 'ديك', 'حيوان', 'حيوان أليف',
+        # Chinese
+        '狗', '犬', '小狗', '猫', '小猫', '猫咪', '鸟', '兔子', '兔',
+        '鱼', '马', '羊', '猪', '牛', '鸭', '鹅', '龟', '蛇', '蜥蜴',
+        '鹦鹉', '仓鼠', '雪貂', '鼠', '青蛙', '鸡', '公鸡', '宠物', '动物',
     }
     _NOISE_PHRASES = {
+        # English
         'i have a', 'i got a', 'my pet is', 'we have a', 'it is a',
         'she is a', 'he is a', 'its a', "it's a",
+        # French
+        "j'ai un", "j'ai une", 'mon animal est', 'notre animal est',
+        "c'est un", "c'est une",
+        # Spanish
+        'tengo un', 'tengo una', 'mi mascota es', 'es un', 'es una',
+        # Hindi
+        'मेरे पास', 'मेरा पालतू', 'हमारे पास', 'यह है', 'यह एक',
+        'मेरे पास एक', 'मेरा', 'मेरी', 'हमारा', 'हमारी', 'है',
+        # Urdu
+        'میرے پاس', 'میرا پالتو', 'ہمارے پاس', 'یہ ہے', 'یہ ایک',
+        'میرا', 'میری', 'ہمارا', 'ہماری',
+        # Arabic
+        'عندي', 'لدي', 'حيواني هو', 'هو', 'هي',
+        # Chinese
+        '我有一只', '我有一个', '我家的', '这是一只', '我的宠物是',
     }
 
     @classmethod

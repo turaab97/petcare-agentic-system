@@ -10,6 +10,36 @@ This file tracks the evolution of the PetCare Triage & Smart Booking Agent proje
 
 ---
 
+## Branch: `main` — POC 1.2 Enhancements
+
+### 2026-03-07 — POC 1.2: Comprehensive Dynamic Guardrails + Multilingual Species Fix
+
+**Comprehensive Dynamic Guardrails** (`enhance/dynamic-guardrails`):
+- Created standalone `backend/guardrails.py` module (~415 lines) — OWASP LLM Top 10 coverage
+- **8 guardrail categories**, each with compiled regex patterns:
+  1. **Prompt injection / jailbreak** (OWASP LLM01, LLM07): ignore instructions, DAN, mode switches, jailbreak, reveal system prompt, inject fake system message, roleplay-as-X, encoded payloads
+  2. **Data extraction** (OWASP LLM02): API keys, tokens, credentials, env vars, config file requests
+  3. **Violence / weapons**: creating weapons/explosives, terrorism, self-harm, animal cruelty, weapon/ammo terms
+  4. **Sexual / explicit**: pornography, bestiality, explicit acts, body parts (non-medical context only), sex toys, solicitation, slurs
+  5. **Human-as-pet**: treating humans as animals, leashing/caging humans
+  6. **Substance abuse**: giving pets drugs/alcohol (non-medical — "my dog ate marijuana" exempt as medical emergency)
+  7. **Abuse / harassment**: directed profanity, threats against bot/staff, slurs (N-word, F-slur, R-word, C-word)
+  8. **Trolling / off-topic**: crypto, homework, code writing, conspiracy, dating, gambling, roleplay-as-boyfriend
+- **Leet-speak normalization** (`str.maketrans`): `0→o, 1→i, 3→e, 4→a, 5→s, 7→t, 8→b, @→a, $→s, !→i, +→t`
+- **Multilingual patterns** for FR, ES, ZH, AR, HI, UR in 6 categories (sexual, violence, abuse, drugs, prompt injection, human-as-pet)
+- **Pet-medical context exemption**: legitimate emergencies (e.g. "my dog ate rat poison", "my cat drank antifreeze") bypass violence/substance/sexual categories
+- All responses localized in 7 languages via `_GUARDRAIL_STRINGS` (5 new response keys × 7 languages)
+- **181-case test suite** (`test_guardrails.py`) covering all 8 categories + leet-speak + multilingual + false-positive prevention
+- Integrated into `_pre_intake_screen()` as check #1, before deceased/non-pet/normal-behavior checks
+
+**Multilingual Species Recognition Fix** (`enhance/dynamic-guardrails`):
+- Added Hindi, Urdu, Arabic, Chinese, French, Spanish species words to `IntakeAgent._SPECIES_WORDS`
+- Added multilingual noise phrases to `IntakeAgent._NOISE_PHRASES`
+- Added Hindi, Urdu, Arabic, Chinese species keywords to orchestrator `_species_keywords` fallback
+- Fixed: "कुत्ता" (dog), "बिल्ली" (cat) etc. now correctly recognized as species (not treated as complaints)
+
+---
+
 ## Branch: `main` — POC 1.1 Enhancements
 
 ### 2026-03-07 — POC 1.1: Guardrails, Diagnostic Intake, i18n, Observability, Integrations, UX

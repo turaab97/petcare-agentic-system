@@ -105,6 +105,7 @@ Owner Input (symptoms, pet info)
 
 | Agent | Input | Output | Key Logic |
 |-------|-------|--------|-----------|
+| **Pre-Intake Guardrails** | Raw user message | Block / pass decision | Comprehensive content-safety screen (`guardrails.py`): 8 categories (prompt injection, data extraction, violence/weapons, sexual/explicit, human-as-pet, substance abuse, abuse/harassment, trolling/off-topic). OWASP LLM Top 10 coverage. Leet-speak normalization, multilingual (7 langs), pet-medical exemptions. Plus: grief detection, non-pet redirect, normal behavior handling. |
 | **A. Intake** | Owner free-text | Structured pet profile + symptoms | Adaptive follow-ups by species + symptom area |
 | **B. Safety Gate** | Structured symptoms | Red-flag boolean + escalation message | Rule-based matching against known emergencies |
 | **C. Confidence Gate** | All collected fields | Confidence score + missing fields | Required-field validation + uncertainty check |
@@ -296,7 +297,9 @@ The system initially struggles because:
 
 **What went well:** The clarification loop worked correctly — the system asked for missing required fields and completed intake once species + complaint were known.
 
-**What could improve:** The initial follow-up question is generic ("What type of pet do you have?") rather than empathetic. A production system should use warmer language (e.g., "I'm sorry to hear that. To help, could you tell me what kind of pet you have and what symptoms you're seeing?"). Additionally, the system does not yet handle truly adversarial or nonsensical input gracefully — it will still attempt to extract symptoms from gibberish text.
+**What could improve:** The initial follow-up question is generic ("What type of pet do you have?") rather than empathetic. A production system should use warmer language (e.g., "I'm sorry to hear that. To help, could you tell me what kind of pet you have and what symptoms you're seeing?").
+
+> **Update (March 7, 2026):** Adversarial and nonsensical input is now handled by the comprehensive guardrails module (`backend/guardrails.py`), which screens all user messages against 8 content-safety categories before the LLM is called. This includes trolling/off-topic detection, prompt injection prevention, and multilingual pattern matching across all 7 supported languages.
 
 ---
 
@@ -308,6 +311,8 @@ The system initially struggles because:
 | Over-triage (too many urgent flags) | Medium | Medium | Calibrate thresholds with scenario tests; allow receptionist override; track override rate |
 | Bad routing (wrong appointment type) | Medium | Medium | Clinic-owned routing map with version control; track override reasons |
 | LLM hallucination in owner guidance | **High** | Low | Strict non-diagnostic language constraints; rule-based safety gate; template-based guidance |
+| Prompt injection / jailbreak | **High** | Medium | Comprehensive pre-intake guardrails (`guardrails.py`) with 15+ prompt injection regex patterns, DAN/jailbreak detection, system prompt leak prevention, leet-speak normalization; runs before any LLM call |
+| Adversarial / toxic input | Medium | Medium | 8-category content-safety screen (OWASP LLM Top 10): violence, sexual, substance abuse, abuse/harassment, trolling, human-as-pet; multilingual (7 langs); 181-case test suite |
 | Owner provides misleading info | Medium | Medium | Confidence gate + targeted follow-ups; "needs human review" flag |
 | API latency exceeds target | Medium | Medium | Limit model calls via smart routing; cache static rules |
 
@@ -492,6 +497,7 @@ Respond with exactly:
 
 | Agent | Logic Source | Description |
 |-------|-------------|-------------|
+| Pre-Intake Guardrails | `backend/guardrails.py` (8 categories, ~100 regex patterns) | Comprehensive content-safety screen: prompt injection, data extraction, violence/weapons, sexual/explicit, human-as-pet, substance abuse, abuse/harassment, trolling/off-topic. Leet-speak normalization, multilingual (FR, ES, ZH, AR, HI, UR), pet-medical context exemptions. 181-case test suite. |
 | B. Safety Gate | `backend/data/red_flags.json` (50+ keywords) | Substring matching against combined intake text |
 | C. Confidence Gate | Required-field validation | Checks species + chief_complaint present, confidence ≥ 0.6 |
 | E. Routing | `backend/data/clinic_rules.json` | Maps symptom area → appointment type + provider pool |

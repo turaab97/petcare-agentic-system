@@ -527,34 +527,83 @@ class Orchestrator:
                         'canine', 'hound', 'labrador', 'retriever', 'bulldog',
                         'poodle', 'beagle', 'husky', 'shepherd', 'dachshund',
                         'chihuahua', 'rottweiler', 'doberman', 'pitbull',
-                        'chien', 'chienne', 'chiot',
-                        'perro', 'perra', 'perrito',
-                        'hund', 'welpe',
-                        'cane', 'cagnolino'],
+                        'chien', 'chienne', 'chiot',       # French
+                        'perro', 'perra', 'perrito',       # Spanish
+                        'hund', 'welpe',                    # German
+                        'cane', 'cagnolino',                # Italian
+                        'कुत्ता', 'कुत्ती', 'पिल्ला',       # Hindi
+                        'کتا', 'کتی',                       # Urdu
+                        'كلب',                               # Arabic
+                        '狗', '犬', '小狗'],                   # Chinese
                 'cat': ['cat', 'cats', 'kitten', 'kittens', 'kitty', 'kitties',
                         'feline', 'tabby', 'calico', 'siamese', 'persian',
                         'bengal', 'maine coon', 'ragdoll',
-                        'chat', 'chatte', 'chaton',
-                        'gato', 'gata', 'gatito',
-                        'katze', 'kätzchen',
-                        'gatto', 'gattino'],
+                        'chat', 'chatte', 'chaton',         # French
+                        'gato', 'gata', 'gatito',           # Spanish
+                        'katze', 'kätzchen',                 # German
+                        'gatto', 'gattino',                  # Italian
+                        'बिल्ली', 'बिल्ला', 'बिल्ली का बच्चा', # Hindi
+                        'بلی', 'بلا',                         # Urdu
+                        'قطة', 'قط',                          # Arabic
+                        '猫', '小猫', '猫咪'],                  # Chinese
                 'bird': ['bird', 'birds', 'parrot', 'parakeet', 'budgie',
                          'cockatiel', 'canary', 'finch', 'macaw', 'cockatoo',
                          'chicken', 'chickens', 'rooster', 'hen', 'duck',
                          'ducks', 'goose', 'geese', 'turkey', 'pigeon',
-                         'dove', 'lovebird', 'conure', 'african grey'],
-                'rabbit': ['rabbit', 'rabbits', 'bunny', 'bunnies', 'hare'],
-                'hamster': ['hamster', 'hamsters', 'gerbil', 'guinea pig'],
+                         'dove', 'lovebird', 'conure', 'african grey',
+                         'oiseau', 'perroquet', 'canard',    # French
+                         'pájaro', 'ave', 'loro', 'pato',    # Spanish
+                         'पक्षी', 'चिड़िया', 'तोता', 'मुर्गी', 'मुर्गा', 'बत्तख',  # Hindi
+                         'پرندہ', 'طوطا', 'مرغی', 'مرغا', 'بطخ',              # Urdu
+                         'طائر', 'عصفور', 'ببغاء', 'دجاجة', 'ديك', 'بطة',    # Arabic
+                         '鸟', '鹦鹉', '鸡', '公鸡', '鸭', '鹅'],               # Chinese
+                'rabbit': ['rabbit', 'rabbits', 'bunny', 'bunnies', 'hare',
+                           'lapin',                          # French
+                           'conejo',                         # Spanish
+                           'खरगोश',                           # Hindi
+                           'خرگوش',                           # Urdu
+                           'أرنب',                            # Arabic
+                           '兔子', '兔'],                      # Chinese
+                'hamster': ['hamster', 'hamsters', 'gerbil', 'guinea pig',
+                            'hámster',                       # Spanish
+                            'हैम्स्टर',                        # Hindi
+                            'ہیمسٹر',                         # Urdu
+                            'هامستر',                         # Arabic
+                            '仓鼠'],                           # Chinese
                 'reptile': ['reptile', 'lizard', 'gecko', 'iguana', 'snake',
-                            'turtle', 'tortoise', 'bearded dragon', 'chameleon'],
+                            'turtle', 'tortoise', 'bearded dragon', 'chameleon',
+                            'tortue', 'serpent', 'lézard',   # French
+                            'tortuga', 'serpiente', 'lagarto', # Spanish
+                            'कछुआ', 'सांप', 'छिपकली',         # Hindi
+                            'کچھوا', 'سانپ', 'چھپکلی',        # Urdu
+                            'سلحفاة', 'ثعبان', 'سحلية',       # Arabic
+                            '龟', '蛇', '蜥蜴'],                # Chinese
                 'horse': ['horse', 'horses', 'pony', 'ponies', 'foal',
-                          'mare', 'stallion', 'colt', 'filly'],
+                          'mare', 'stallion', 'colt', 'filly',
+                          'cheval', 'poney',                 # French
+                          'caballo', 'yegua',                # Spanish
+                          'घोड़ा', 'घोड़ी', 'टट्टू',           # Hindi
+                          'گھوڑا', 'گھوڑی',                   # Urdu
+                          'حصان', 'فرس',                     # Arabic
+                          '马'],                              # Chinese
                 'fish': ['fish', 'goldfish', 'betta', 'guppy', 'koi',
-                         'aquarium fish', 'tropical fish'],
+                         'aquarium fish', 'tropical fish',
+                         'poisson',                          # French
+                         'pez',                              # Spanish
+                         'मछली',                              # Hindi
+                         'مچھلی',                             # Urdu
+                         'سمكة',                              # Arabic
+                         '鱼'],                               # Chinese
                 'other': ['hedgehog', 'chinchilla', 'rat', 'rats',
                           'mouse', 'mice', 'ferret', 'ferrets',
                           'frog', 'toad', 'goat', 'sheep', 'pig',
-                          'piglet', 'cow', 'calf', 'lamb'],
+                          'piglet', 'cow', 'calf', 'lamb',
+                          'hérisson', 'furet', 'souris', 'grenouille', 'chèvre', 'mouton', 'cochon', 'vache', 'veau',  # French
+                          'erizo', 'hurón', 'ratón', 'rana', 'cabra', 'oveja', 'cerdo', 'vaca', 'ternero',            # Spanish
+                          'चूहा', 'मेंढक', 'बकरी', 'बकरा', 'भेड़', 'सूअर', 'गाय', 'बछड़ा', 'हंस',                    # Hindi
+                          'چوہا', 'مینڈک', 'بکری', 'بکرا', 'بھیڑ', 'سور', 'گائے', 'بچھڑا',                          # Urdu
+                          'فأر', 'ضفدع', 'ماعز', 'خروف', 'غنم', 'بقرة', 'عجل',                                     # Arabic
+                          '鼠', '青蛙', '羊', '猪', '牛'],
             }
             # Build search text from user message + all prior user messages
             all_user_text = user_message.lower()

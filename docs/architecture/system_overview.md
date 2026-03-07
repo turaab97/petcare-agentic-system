@@ -13,7 +13,14 @@ The PetCare Triage & Smart Booking Agent automates veterinary clinic intake by c
 1. **Input Layer**
    - Accepts owner free-text describing pet symptoms, species, and basic profile via web chat interface.
 
-2. **Intake Layer (Sub-Agent A)**
+2. **Content-Safety Guardrails (Pre-Intake)**
+   - Comprehensive deterministic screen (`backend/guardrails.py`) runs **before** any LLM call.
+   - 8 categories: prompt injection / jailbreak (OWASP LLM01, LLM07), data extraction (OWASP LLM02), violence / weapons, sexual / explicit, human-as-pet, substance abuse, abuse / harassment, trolling / off-topic.
+   - Leet-speak normalization, multilingual patterns (FR, ES, ZH, AR, HI, UR), pet-medical context exemptions.
+   - Also handles: deceased pet (compassionate close), non-pet subjects (redirect), normal animal behavior.
+   - 181-case test suite.
+
+3. **Intake Layer (Sub-Agent A)**
    - Conducts adaptive, multi-turn symptom collection with species-specific follow-up questions.
 
 3. **Safety Layer (Sub-Agent B)**
@@ -47,6 +54,7 @@ The architecture diagram above illustrates the full branching workflow:
 
 ```
 Trigger (owner starts intake)
+  → Content-Safety Guardrails (8-category pre-intake screen — blocks abuse, injection, violence, etc.)
   → Sub-Agent A: Intake (collect pet profile + chief complaint + timeline + key symptoms)
   → Sub-Agent A (cont.): Ask adaptive follow-ups by symptom area (GI / resp / skin / injury / behavior)
   → Sub-Agent B: Safety Gate (red-flag symptoms present?)

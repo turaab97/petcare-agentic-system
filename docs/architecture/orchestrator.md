@@ -56,6 +56,8 @@ A background thread runs every **10 minutes** to evict expired sessions from bot
 
 ### 3. Safety Enforcement
 
+- **Invariant:** Comprehensive content-safety guardrails (`backend/guardrails.py`) run **before** any LLM call — 8 categories: prompt injection, data extraction, violence/weapons, sexual/explicit, human-as-pet, substance abuse, abuse/harassment, trolling/off-topic; with leet-speak normalization, multilingual patterns (FR, ES, ZH, AR, HI, UR), and pet-medical context exemptions
+- **Invariant:** Pre-intake screen also handles deceased pets (compassionate close), non-pet subjects (redirect), and normal animal behavior (acknowledge)
 - **Invariant:** Safety Gate (B) always runs before any triage or routing
 - **Invariant:** Emergency red flags always trigger escalation messaging
 - **Invariant:** Agent never provides diagnoses or prescriptions

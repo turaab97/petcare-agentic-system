@@ -26,6 +26,7 @@ It is designed for **team-based development**, where each team member can own on
   - **Prompt + light code** (scoring helpers, validators, rule-based checks)
 - Adding **example fixtures** for each agent (sample input + sample output)
 - Orchestrator integration, safety enforcement, and schema validation
+- **Comprehensive content-safety guardrails** (8 categories, OWASP LLM Top 10, multilingual, 181-case test suite)
 - Synthetic test data creation and evaluation
 - Owner-facing chat interface (web-based)
 - Clinic-facing summary output

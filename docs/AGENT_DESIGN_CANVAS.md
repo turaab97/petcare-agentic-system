@@ -217,7 +217,7 @@ flowchart TD
 
 - **Latency target:** &lt; 10–15 seconds for full intake summary (intake itself is interactive).
 - **Cost control:** Limit LLM calls to Intake (A), Triage (D), Guidance (G); B, C, E, F are rule-based.
-- **Safety:** Strict non-diagnostic language + red-flag escalation; logging for audit.
+- **Safety:** Strict non-diagnostic language + red-flag escalation + comprehensive content-safety guardrails (8 categories, OWASP LLM Top 10); logging for audit.
 - **Privacy:** Avoid storing sensitive details; minimize retention.
 - **Deployment:** Render (recommended) for POC; Docker for local/reproducible runs.
 
@@ -249,6 +249,23 @@ The POC implements defense-in-depth across all layers:
 - `species` sanitized to 50 chars; `chief_complaint` to 200 chars
 - `symptom_area` validated against a fixed allowlist (gastrointestinal, respiratory, dermatological, injury, urinary) — rejects anything else
 - Photo analysis species sanitized to alphanumeric + spaces, 30 char max
+
+**Comprehensive content-safety guardrails (`backend/guardrails.py`):**
+- **Pre-intake screen** runs before any LLM call on every user message
+- **8 guardrail categories**, ~100 compiled regex patterns:
+  1. Prompt injection / jailbreak (OWASP LLM01, LLM07): ignore instructions, DAN, mode switches, jailbreak, reveal system prompt, encoded payloads
+  2. Data extraction (OWASP LLM02): API keys, tokens, credentials, env vars, config files
+  3. Violence / weapons / terrorism / self-harm / animal cruelty
+  4. Sexual / explicit / bestiality / pornography (non-medical body parts exempt in medical context)
+  5. Human-as-pet references
+  6. Substance abuse involving pets (legitimate ingestion emergencies exempt)
+  7. Abuse / harassment / directed profanity / slurs
+  8. Trolling / off-topic (crypto, homework, dating, conspiracy, etc.)
+- **Leet-speak normalization**: `0→o, 1→i, 3→e, 4→a, 5→s, 7→t, 8→b, @→a, $→s, !→i, +→t`
+- **Multilingual patterns**: FR, ES, ZH, AR, HI, UR in 6 categories
+- **Pet-medical context exemption**: "my dog ate rat poison", "my cat drank antifreeze" bypass violence/substance/sexual categories
+- **181-case test suite** (`test_guardrails.py`)
+- Localized block responses in all 7 languages
 
 **XSS prevention (frontend/js/app.js):**
 - `_escapeHtml()` utility escapes `& < > " '` in all user-derived data before DOM insertion

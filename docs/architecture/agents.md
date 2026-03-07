@@ -12,6 +12,7 @@ Agents are specialized sub-components that receive structured input, perform a f
 
 | # | Agent Name | Core Responsibility | Input | Output |
 |---|-----------|---------------------|-------|--------|
+| -- | Pre-Intake Guardrails | Comprehensive content-safety screen (8 categories, OWASP LLM Top 10) | Raw user message | Block / pass decision |
 | A | Intake Agent | Collect pet profile + chief complaint + timeline via adaptive follow-ups | Owner free-text | Structured pet profile + symptom data |
 | B | Safety Gate Agent | Detect emergency red flags and trigger escalation | Structured symptoms | Red-flag boolean + escalation message |
 | C | Confidence Gate Agent | Verify required fields and overall confidence | All collected fields | Confidence score + missing fields list |
@@ -24,6 +25,14 @@ Agents are specialized sub-components that receive structured input, perform a f
 ---
 
 ## Sub-Agent Details
+
+### Pre-Intake Content-Safety Guardrails
+
+- **Trigger:** Every user message, before any LLM call
+- **Logic:** Comprehensive regex-based content-safety screen (`backend/guardrails.py`) covering 8 categories: prompt injection / jailbreak (OWASP LLM01, LLM07), data extraction (OWASP LLM02), violence / weapons / terrorism / self-harm / animal cruelty, sexual / explicit / bestiality, human-as-pet, substance abuse (pet context), abuse / harassment / slurs, trolling / off-topic. Leet-speak normalization, multilingual patterns (FR, ES, ZH, AR, HI, UR), pet-medical context exemptions (e.g. "my dog ate rat poison" passes through). Also handles: deceased pet (compassionate close), non-pet subjects (redirect to human health), normal animal behavior.
+- **Output:** Block with localized response, or pass to Intake Agent
+- **Edge Cases:** Medical emergencies that superficially match violence/substance patterns; leet-speak obfuscation (s3x, p0rn, b0mb)
+- **Test Suite:** 181 test cases covering all categories + multilingual + false-positive prevention
 
 ### A. Intake Agent
 

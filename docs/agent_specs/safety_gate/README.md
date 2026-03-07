@@ -28,6 +28,9 @@ The Safety Gate Agent is a rule-based emergency detector that ensures no critica
   - Follow-up question generation (handled by Intake Agent)
   - Medical diagnoses
 
+- **Complementary system:**
+  - The **comprehensive content-safety guardrails** (`backend/guardrails.py`) run **before** the Safety Gate in the pipeline. They screen for adversarial / toxic / off-topic input (8 categories: prompt injection, data extraction, violence/weapons, sexual/explicit, human-as-pet, substance abuse, abuse/harassment, trolling) with multilingual support and leet-speak normalization. The Safety Gate focuses on **medical emergency detection** from legitimate pet health concerns.
+
 ## Required Deliverables
 
 - `input_output_contract.md`
