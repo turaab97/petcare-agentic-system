@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import openai
+from langsmith.wrappers import wrap_openai
 
 logger = logging.getLogger('petcare.agents.intake')
 
@@ -127,7 +128,7 @@ class IntakeAgent:
         are both known. Never diagnoses or names conditions.
         Falls back to simple extraction on LLM failure.
         """
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = wrap_openai(openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
         lang_code = session.get('language', 'en')
         lang_names = {
             'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',

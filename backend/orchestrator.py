@@ -27,6 +27,7 @@ import time
 import logging
 import re
 from datetime import datetime
+from langsmith import traceable
 
 # ---------------------------------------------------------------------------
 # Localized UI strings for all 7 supported languages.
@@ -415,6 +416,7 @@ class Orchestrator:
 
         return None
 
+    @traceable(name="orchestrator.process")
     def process(self, user_message: str) -> dict:
         self.start_time = time.time()
 
