@@ -2092,18 +2092,39 @@ function _clearSavedProfile(el) {
 function _saveSymptomHistory(summaryData) {
     try {
         const history = JSON.parse(localStorage.getItem('petcare_symptom_history') || '[]');
-        const pet = summaryData.pet_profile || {};
-        const out = summaryData.agent_outputs || {};
-        const triage = (out.triage || {}).output || {};
+        const pet     = summaryData.pet_profile || {};
+        const out     = summaryData.agent_outputs || {};
+        const triage  = (out.triage    || {}).output || {};
+        const routing = (out.routing   || {}).output || {};
+        const sched   = (out.scheduling || {}).output || {};
+        const guidance = (out.guidance_summary || {}).output || {};
         const symptoms = summaryData.symptoms || {};
 
+        // Store a rich snapshot so the history panel can show full visit details.
+        // (We cap guidance text at 600 chars to stay well under the 5 MB localStorage limit.)
         history.push({
-            date: new Date().toISOString(),
-            species: pet.species || '',
-            pet_name: pet.pet_name || '',
-            chief_complaint: symptoms.chief_complaint || '',
-            urgency: triage.urgency_tier || '',
-            session_id: sessionId
+            date:            new Date().toISOString(),
+            session_id:      sessionId,
+            // Pet identification
+            species:         pet.species    || '',
+            pet_name:        pet.pet_name   || '',
+            breed:           pet.breed      || '',
+            age:             pet.age        || '',
+            weight:          pet.weight     || '',
+            // Visit data
+            chief_complaint: symptoms.chief_complaint  || '',
+            timeline:        symptoms.timeline          || '',
+            eating_drinking: symptoms.eating_drinking   || '',
+            energy_level:    symptoms.energy_level      || '',
+            // Triage & routing
+            urgency:         triage.urgency_tier        || '',
+            rationale:       triage.rationale           || '',
+            appointment_type: routing.appointment_type  || '',
+            provider_pool:   routing.provider_pool      || [],
+            // Scheduling
+            proposed_slots:  (sched.proposed_slots || []).slice(0, 3),
+            // Guidance — first 600 chars to cap storage
+            owner_guidance:  (guidance.owner_guidance || '').slice(0, 600),
         });
 
         // Keep only last 20 entries
@@ -2122,32 +2143,179 @@ function _showSymptomHistory() {
         const recent = history.slice(-5).reverse();
         const container = document.getElementById('chat-messages');
         const div = document.createElement('div');
+        div.id = 'symptom-history-panel';
         div.className = 'message assistant symptom-history';
+
+        const urgencyColors = {
+            Emergency: '#dc2626', 'Same-day': '#f59e0b',
+            Soon: '#d4ac0d', Routine: '#16a34a'
+        };
 
         let html = `<div class="history-header">${t('historyTitle')}</div>`;
         html += '<div class="history-entries">';
-        for (const entry of recent) {
+        for (let i = 0; i < recent.length; i++) {
+            const entry = recent[i];
             const date = new Date(entry.date);
-            const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            const name = entry.pet_name || entry.species || 'Pet';
-            const urgencyColors = {
-                Emergency: '#dc2626', 'Same-day': '#f59e0b',
-                Soon: '#d4ac0d', Routine: '#16a34a'
-            };
+            const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            const name = entry.pet_name
+                ? `${_escapeHtml(entry.pet_name)} (${_escapeHtml(entry.species || '')})`
+                : _escapeHtml(entry.species || 'Pet');
             const color = urgencyColors[entry.urgency] || '#64748b';
             html += `
-                <div class="history-entry">
-                    <span class="history-date">${_escapeHtml(dateStr)}</span>
-                    <span class="history-pet">${_escapeHtml(name)}</span>
+                <div class="history-entry" data-idx="${i}" onclick="_expandHistoryEntry(${i})" role="button" tabindex="0" style="cursor:pointer">
+                    <span class="history-date">${dateStr}</span>
+                    <span class="history-pet">${name}</span>
                     <span class="history-complaint">${_escapeHtml(entry.chief_complaint || '')}</span>
                     <span class="history-urgency" style="color:${color}">${_escapeHtml(entry.urgency || '')}</span>
+                    <span class="history-expand-hint" style="font-size:0.75rem;color:#9ca3af;margin-left:4px">▶ tap to expand</span>
                 </div>`;
         }
         html += '</div>';
-        html += '<button onclick="this.parentElement.remove()" class="action-btn-sm secondary" style="margin-top:8px">Dismiss</button>';
+        html += '<button onclick="document.getElementById(\'symptom-history-panel\').remove()" class="action-btn-sm secondary" style="margin-top:8px">Dismiss</button>';
         div.innerHTML = html;
         container.appendChild(div);
+
+        // Store for expansion access
+        div._historyData = recent;
     } catch (_) {}
+}
+
+/**
+ * Expand a history entry inline, showing full visit details
+ * and a "Start session with this pet" button.
+ */
+function _expandHistoryEntry(idx) {
+    try {
+        const panel = document.getElementById('symptom-history-panel');
+        if (!panel || !panel._historyData) return;
+        const entry = panel._historyData[idx];
+        if (!entry) return;
+
+        // Remove any existing detail view
+        const existing = document.getElementById('history-detail-panel');
+        if (existing) existing.remove();
+
+        const urgencyColors = {
+            Emergency: '#dc2626', 'Same-day': '#f59e0b',
+            Soon: '#d4ac0d', Routine: '#16a34a'
+        };
+        const urgColor = urgencyColors[entry.urgency] || '#64748b';
+        const date = new Date(entry.date);
+        const dateStr = date.toLocaleDateString(undefined, {
+            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+        });
+
+        // Build pet profile section
+        let petDetails = `<strong>${_escapeHtml(entry.pet_name || entry.species || 'Unknown')}</strong>`;
+        if (entry.species)  petDetails += ` · ${_escapeHtml(entry.species)}`;
+        if (entry.breed)    petDetails += ` · ${_escapeHtml(entry.breed)}`;
+        if (entry.age)      petDetails += ` · ${_escapeHtml(entry.age)}`;
+        if (entry.weight)   petDetails += ` · ${_escapeHtml(entry.weight)}`;
+
+        // Build visit data rows
+        const rows = [];
+        if (entry.chief_complaint)  rows.push(['Chief complaint', entry.chief_complaint]);
+        if (entry.timeline)         rows.push(['Timeline', entry.timeline]);
+        if (entry.eating_drinking)  rows.push(['Eating/drinking', entry.eating_drinking]);
+        if (entry.energy_level)     rows.push(['Energy level', entry.energy_level]);
+        if (entry.urgency)          rows.push(['Urgency tier', `<span style="color:${urgColor};font-weight:600">${entry.urgency}</span>`]);
+        if (entry.appointment_type) rows.push(['Appointment type', entry.appointment_type]);
+
+        // Proposed slots
+        let slotsHtml = '';
+        if (entry.proposed_slots && entry.proposed_slots.length > 0) {
+            slotsHtml = '<div style="margin-top:8px"><strong>Proposed appointments:</strong><ul style="margin:4px 0 0 16px">';
+            for (const s of entry.proposed_slots) {
+                try {
+                    const dt = new Date(s.datetime);
+                    const friendly = dt.toLocaleString(undefined, {
+                        weekday: 'short', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit'
+                    });
+                    slotsHtml += `<li>${_escapeHtml(friendly)} — ${_escapeHtml(s.provider || '')}</li>`;
+                } catch (_) {
+                    slotsHtml += `<li>${_escapeHtml(s.datetime || '')} — ${_escapeHtml(s.provider || '')}</li>`;
+                }
+            }
+            slotsHtml += '</ul></div>';
+        }
+
+        // Guidance snippet
+        let guidanceHtml = '';
+        if (entry.owner_guidance) {
+            guidanceHtml = `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+                <strong>Guidance from last visit:</strong>
+                <p style="margin:4px 0;color:var(--text-secondary);font-size:0.875rem">${_escapeHtml(entry.owner_guidance)}</p>
+            </div>`;
+        }
+
+        const rowsHtml = rows.map(([label, val]) =>
+            `<div style="display:flex;gap:8px;margin:3px 0">
+               <span style="color:var(--text-secondary);min-width:130px;font-size:0.85rem">${_escapeHtml(label)}:</span>
+               <span style="font-size:0.85rem">${val}</span>
+             </div>`
+        ).join('');
+
+        const detail = document.createElement('div');
+        detail.id = 'history-detail-panel';
+        detail.className = 'message assistant';
+        detail.style.cssText = 'border-left:3px solid var(--primary);background:var(--surface);';
+        detail.innerHTML = `
+            <div style="font-weight:600;margin-bottom:6px">📋 Visit — ${_escapeHtml(dateStr)}</div>
+            <div style="margin-bottom:8px">${petDetails}</div>
+            ${rowsHtml}
+            ${slotsHtml}
+            ${guidanceHtml}
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+                <button class="action-btn-sm" onclick="_startSessionFromHistory(${idx})">
+                    🐾 Start new session with this pet
+                </button>
+                <button class="action-btn-sm secondary" onclick="document.getElementById('history-detail-panel').remove()">
+                    Close
+                </button>
+            </div>`;
+        panel.insertAdjacentElement('afterend', detail);
+        detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        detail._historyEntry = entry;
+    } catch (err) {
+        console.error('History expand error:', err);
+    }
+}
+
+/**
+ * Pre-fill the current session with the pet profile from a history entry.
+ * Sends the profile details as an initial message so the intake agent
+ * can skip re-asking for species/name/breed.
+ */
+async function _startSessionFromHistory(idx) {
+    try {
+        const panel = document.getElementById('symptom-history-panel');
+        if (!panel || !panel._historyData) return;
+        const entry = panel._historyData[idx];
+        if (!entry) return;
+
+        // Dismiss history panels
+        document.getElementById('symptom-history-panel')?.remove();
+        document.getElementById('history-detail-panel')?.remove();
+
+        // Build a pre-fill message describing the pet
+        const parts = [];
+        if (entry.species)  parts.push(entry.species);
+        if (entry.pet_name) parts.push(`named ${entry.pet_name}`);
+        if (entry.breed)    parts.push(entry.breed);
+        if (entry.age)      parts.push(entry.age + ' old');
+
+        const prefillMsg = parts.length > 0
+            ? `My pet is a ${parts.join(', ')}.`
+            : 'I want to start a new triage for my pet.';
+
+        // Inject as a user message so the intake agent picks up the profile
+        const input = document.getElementById('user-input');
+        input.value = prefillMsg;
+        await sendMessage('text');
+    } catch (err) {
+        console.error('History preload error:', err);
+    }
 }
 
 // ---------------------------------------------------------------------------
