@@ -39,6 +39,20 @@ Without an Orchestrator, the system would be a collection of disconnected agents
 - Passes only relevant data to each sub-agent
 - Ensures state consistency across the intake flow
 
+#### SessionState Constants
+
+All session state assignments and comparisons use the `SessionState` class defined in `backend/orchestrator.py` rather than raw strings:
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `SessionState.INTAKE` | `"intake"` | Intake in progress |
+| `SessionState.COMPLETE` | `"complete"` | Intake finished normally |
+| `SessionState.EMERGENCY` | `"emergency"` | Emergency escalation triggered |
+| `SessionState.BOOKED` | `"booked"` | Appointment confirmed |
+| `SessionState.TERMINAL_STATES` | `{COMPLETE, EMERGENCY, BOOKED}` | States after which the session is archived |
+
+Using named constants prevents silent typo bugs (e.g. `"compelte"` vs `"complete"`) that would cause branching logic to silently fail.
+
 #### Two-Tier Session Store
 
 The Orchestrator uses a **two-tier in-memory session store** to balance active-session performance with post-completion access:
@@ -96,6 +110,28 @@ A background thread runs every **10 minutes** to evict expired sessions from bot
 9. Assemble final response
 10. Return to owner + store clinic summary
 ```
+
+---
+
+## Multilingual Slot Matching (`_match_slot()`)
+
+When an owner selects a proposed appointment slot by ordinal or day name, `_match_slot()` in `backend/orchestrator.py` resolves their reply to a specific slot using two lookup tables:
+
+**Ordinal word support (all 7 languages):**
+
+| Language | First | Second | Third |
+|----------|-------|--------|-------|
+| English | first | second | third |
+| French | premier / première | deuxième | troisième |
+| Spanish | primero / primera | segundo | tercero |
+| Chinese | 第一个 | 第二个 | 第三个 |
+| Arabic | الأول | الثاني | الثالث |
+| Hindi | पहला | दूसरा | तीसरा |
+| Urdu | پہلا | دوسرا | تیسرا |
+
+**Day-name support:** The `_DAY_NAMES` dict maps day names in all 7 languages (e.g. "lundi", "الاثنين", "सोमवार") to their weekday index, replacing the previous English-only `strftime('%A')` comparison.
+
+This means owners can confirm slots in their session language (e.g. "le premier" or "第一个") and the booking flow handles it correctly without requiring English.
 
 ---
 

@@ -10,6 +10,37 @@ This file tracks the evolution of the PetCare Triage & Smart Booking Agent proje
 
 ---
 
+## Branches: Post-v1.0 Improvement Passes — 2026-03-08
+
+### improve/scheduling-urgency-window · improve/slot-confirmation · improve/session-state-enum · improve/frontend-ux
+
+**Tag:** `improve/post-v1.0`
+
+**Scheduling Agent — Urgency Date-Window Filtering (`improve/scheduling-urgency-window`):**
+- Scheduling Agent now filters available slots by a date window matched to the urgency tier: Same-day → today only, Soon → next 1–3 days, Routine → next 7 days
+- Falls back to the full slot pool if the strict window yields no matching slots, preventing empty proposals
+- File: `backend/agents/scheduling_agent.py` / `backend/orchestrator.py`
+
+**Slot Confirmation — Multilingual Ordinal + Day-Name Matching (`improve/slot-confirmation`):**
+- `_match_slot()` in `backend/orchestrator.py` now recognises ordinal words in all 7 languages when owners select a slot by position: EN ("first"/"second"), FR ("premier"/"deuxième"), ES ("primero"/"segundo"), ZH ("第一个"/"第二个"), AR ("الأول"/"الثاني"), HI ("पहला"/"दूसरा"), UR ("پہلا"/"دوسرا")
+- Day-name matching extended to all 7 languages via new `_DAY_NAMES` dict — previously relied on Python `strftime('%A')` (English only)
+- Removed redundant `import re` statement inside the method
+
+**Session State Constants — `SessionState` Class (`improve/session-state-enum`):**
+- Added `SessionState` class to `backend/orchestrator.py` with named constants: `INTAKE`, `COMPLETE`, `EMERGENCY`, `BOOKED`, and the `TERMINAL_STATES` set
+- All session state assignments and checks in the Orchestrator now use these constants instead of raw strings, eliminating silent typo bugs
+- Removed unreachable dead code block in `backend/agents/intake_agent.py` — lines after `return None` inside `enrich_context()` except block that could never execute
+
+**Frontend UX Improvements (`improve/frontend-ux`):**
+- **Auto-grow textarea:** input box expands as the owner types (up to 200 px max-height) and shrinks back when text is deleted
+- **Live character counter:** displays "{count} / 2000"; turns amber at 80% of the limit (1600 chars), red at the limit (2000 chars); hard cap enforced — characters beyond the limit are rejected
+- **Emergency banner dark-mode fix:** banner now uses CSS class `.emergency-banner-bar` instead of inline `style.cssText`, which was overriding dark-mode styles
+- **`AbortController` for `/message` fetch:** cancels any in-flight request before sending a new one — prevents double-submission race conditions
+- **Hardcoded English strings localised:** "Session expired. Reconnecting..." → `t('sessionExpired')`; "Get Started" → `t('getStarted')`; new i18n keys `sessionExpired`, `getStarted`, and `charCount` added to all 7 language blocks
+- **Accessibility — `aria-label` on icon-only buttons:** voice, photo, send, TTS, and dark-mode toggle buttons now carry `aria-label`; voice and TTS buttons update their label dynamically when toggled
+
+---
+
 ## Branch: `main` — Production Readiness Pass
 
 ### 2026-03-08 — Adaptive Intake + Retry + Temporal Safety Gate + Triage Context

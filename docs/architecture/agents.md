@@ -18,9 +18,9 @@ Agents are specialized sub-components that receive structured input, perform a f
 | C | Confidence Gate Agent | Verify required fields and overall confidence | All collected fields | Confidence score + missing fields list |
 | D | Triage Agent | Assign urgency tier with rationale and confidence | Validated intake data | Urgency tier + rationale + confidence |
 | E | Routing Agent | Map symptom category to appointment type / provider pool | Triage result + symptoms | Appointment type + provider pool |
-| F | Scheduling Agent | Propose available slots or generate booking request | Routing result + urgency | Slot proposals / booking payload |
+| F | Scheduling Agent | Propose available slots or generate booking request (urgency-window filtered) | Routing result + urgency | Slot proposals / booking payload |
 | G | Guidance & Summary Agent | Generate safe owner guidance + structured clinic handoff | All agent outputs | Owner guidance text + clinic JSON |
-| -- | Orchestrator Agent | Coordinate workflow, manage state, enforce safety rules | All agent outputs | Final combined response |
+| -- | Orchestrator Agent | Coordinate workflow, manage state via `SessionState` constants, enforce safety rules | All agent outputs | Final combined response |
 
 ---
 
@@ -75,7 +75,7 @@ Agents are specialized sub-components that receive structured input, perform a f
 ### F. Scheduling Agent
 
 - **Trigger:** Routing complete
-- **Logic:** Based on urgency tier and appointment type, find matching available slots from the clinic schedule. **Slots are regenerated fresh on every request** (not cached at startup) so proposed dates are always relative to the current date. Propose top 2-3 options or generate a booking request payload.
+- **Logic:** Based on urgency tier and appointment type, find matching available slots from the clinic schedule. **Slots are regenerated fresh on every request** (not cached at startup) so proposed dates are always relative to the current date. **Urgency date-window filtering** narrows the candidate pool before scoring: Same-day → today only, Soon → next 1–3 days, Routine → next 7 days. If the strict window yields no slots, the agent falls back to the full pool to guarantee a non-empty proposal. Propose top 2-3 options or generate a booking request payload.
 - **Output:** `proposed_slots[]`, `booking_request` (JSON payload for clinic system)
 - **Edge Cases:** No slots available for required urgency, after-hours emergency
 

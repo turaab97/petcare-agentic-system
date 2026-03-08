@@ -485,6 +485,45 @@ A second black-box pentest specifically targeting AI/LLM vulnerabilities was con
 
 ---
 
+## STEP 9: Post-v1.0 Improvement Branches (March 8, 2026)
+
+### Scheduling — Urgency Date-Window Filtering (`improve/scheduling-urgency-window`)
+
+| Before | After |
+|--------|-------|
+| Scheduling Agent scored all future slots regardless of urgency | Candidate pool pre-filtered by date window: Same-day → today only, Soon → next 1–3 days, Routine → next 7 days |
+| No date constraint; could propose slots far outside the clinical window | Falls back to full pool if strict window yields no slots — proposal is never empty |
+
+### Slot Confirmation — Multilingual Ordinal + Day-Name Matching (`improve/slot-confirmation`)
+
+| Before | After |
+|--------|-------|
+| Ordinal selection ("first", "second") only recognised in English | `_match_slot()` recognises ordinals in all 7 languages (EN/FR/ES/ZH/AR/HI/UR) |
+| Day-name matching used Python `strftime('%A')` — English only | New `_DAY_NAMES` dict maps day names in all 7 languages to weekday index |
+| Redundant `import re` inside `_match_slot()` | Redundant import removed |
+
+### Session State — `SessionState` Constants (`improve/session-state-enum`)
+
+| Before | After |
+|--------|-------|
+| State assigned/checked as raw strings (`"intake"`, `"complete"`, etc.) | `SessionState` class with `INTAKE`, `COMPLETE`, `EMERGENCY`, `BOOKED`, `TERMINAL_STATES` constants |
+| Typos in state strings would silently break branching logic | Named constants catch typos at definition time; IDE auto-complete works |
+| Dead code block after `return None` in `intake_agent.py` `enrich_context()` except block | Unreachable lines removed |
+
+### Frontend UX Improvements (`improve/frontend-ux`)
+
+| Improvement | Detail |
+|-------------|--------|
+| **Auto-grow textarea** | Expands as user types (up to 200 px), shrinks on delete |
+| **Live character counter** | "{count} / 2000" — amber at 80%, red at limit, hard cap enforced |
+| **Emergency banner dark-mode fix** | Uses CSS class `.emergency-banner-bar` instead of inline `style.cssText` |
+| **AbortController** | Cancels in-flight `/message` fetch on new submission — prevents double-submit |
+| **i18n: session expired & get started** | `t('sessionExpired')` and `t('getStarted')` replace hardcoded English; keys added to all 7 language blocks |
+| **i18n: char counter** | `charCount` key added to all 7 language blocks |
+| **Accessibility: aria-labels** | `aria-label` on all icon-only buttons (voice, photo, send, TTS, dark mode); voice + TTS update dynamically on toggle |
+
+---
+
 ## Reference: Key Repo Documents
 
 | Document | Purpose |

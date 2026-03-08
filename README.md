@@ -451,7 +451,18 @@ The following were consulted for domain context and workflow design only. They a
 
 ## ✅ Current Status
 
+> **Post-v1.0 improvement branches merged (March 8, 2026):** scheduling urgency-window filtering, multilingual slot confirmation, `SessionState` constants, and frontend UX hardening (auto-grow textarea, character counter, dark-mode emergency banner fix, `AbortController`, i18n strings, aria-labels). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for full details.
+
 > **v1.1-poc — POC 1.1 enhancements merged to main.** Builds on the baseline v1.0-poc (100% M2/M4 eval). POC 1.1 adds smart guardrails, structured diagnostic intake, booking fixes, full i18n enforcement, LangSmith observability, N8N webhook integration, Twilio click-to-call, and scroll UX improvements. Live URL: `https://petcare-agentic-system.onrender.com` (password-protected).
+
+### Post-v1.0 Improvements (March 8, 2026)
+
+| Branch | Change |
+|--------|--------|
+| `improve/scheduling-urgency-window` | Scheduling Agent pre-filters slots by urgency date window (Same-day → today, Soon → 1–3 days, Routine → 7 days); falls back to full pool if window is empty |
+| `improve/slot-confirmation` | `_match_slot()` recognises ordinal words ("first"/"premier"/"第一个"/"الأول"/"पहला"/"پہلا") and day names in all 7 languages via new `_DAY_NAMES` dict — previously English only |
+| `improve/session-state-enum` | `SessionState` class added to `orchestrator.py` with constants `INTAKE`, `COMPLETE`, `EMERGENCY`, `BOOKED`, `TERMINAL_STATES` — all raw-string state checks replaced; dead code removed from `intake_agent.py` |
+| `improve/frontend-ux` | Auto-grow textarea, live character counter (amber/red at 80%/100%), dark-mode emergency banner fix, `AbortController` for `/message` fetch, `sessionExpired`/`getStarted`/`charCount` i18n keys in all 7 languages, `aria-label` on all icon-only buttons |
 
 ### What's New in POC 1.1
 
