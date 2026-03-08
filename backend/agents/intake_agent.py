@@ -12,6 +12,7 @@ import json
 import logging
 import openai
 from langsmith.wrappers import wrap_openai
+from backend.utils.llm_utils import llm_call_with_retry
 
 logger = logging.getLogger('petcare.agents.intake')
 
@@ -325,13 +326,13 @@ For symptom_details.area use only: gastrointestinal, respiratory, dermatological
         history.append({'role': 'user', 'content': user_message})
 
         try:
-            resp = client.chat.completions.create(
+            raw = llm_call_with_retry(
+                client,
                 model='gpt-4o-mini',
                 max_tokens=500,
                 temperature=0.3,   # Slightly warmer → more natural phrasing, still deterministic
                 messages=[{'role': 'system', 'content': system_prompt}] + history
             )
-            raw = resp.choices[0].message.content.strip()
             if '```' in raw:
                 parts = raw.split('```')
                 for part in parts:
@@ -464,6 +465,102 @@ For symptom_details.area use only: gastrointestinal, respiratory, dermatological
                 final_complaint = ''
             complete = bool(final_species and final_complaint)
             lang_code = session.get('language', 'en')
+
+    def enrich_context(self, session: dict) -> str | None:
+        """
+        Generate ONE contextually appropriate follow-up question after intake completes.
+
+        Called by the orchestrator in place of the rigid timeline→eating→energy
+        script. The LLM picks the single most clinically relevant question for
+        the specific complaint — e.g. for a limping dog it asks about weight-bearing,
+        not about appetite; for vomiting it asks about fluid intake.
+
+        Returns the question string, or None if sufficient context already exists
+        or if the case is clearly routine (no enrichment needed).
+        """
+        client = wrap_openai(openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
+
+        species = _sanitize_for_prompt(
+            session.get('pet_profile', {}).get('species', 'pet'), max_len=50
+        ) or 'pet'
+        complaint = _sanitize_for_prompt(
+            session.get('symptoms', {}).get('chief_complaint', ''), max_len=200
+        )
+        symptoms = session.get('symptoms', {})
+        lang_code = session.get('language', 'en')
+        lang_names = {
+            'en': 'English', 'fr': 'French', 'zh': 'Chinese (Mandarin)',
+            'ar': 'Arabic', 'es': 'Spanish', 'hi': 'Hindi', 'ur': 'Urdu'
+        }
+        lang_name = lang_names.get(lang_code, 'English')
+
+        has_timeline = bool(symptoms.get('timeline'))
+        has_eating   = bool(symptoms.get('eating_drinking'))
+        has_energy   = bool(symptoms.get('energy_level'))
+
+        # If all three context fields are already captured, nothing more to ask
+        if has_timeline and has_eating and has_energy:
+            return None
+
+        known_parts = []
+        if has_timeline:
+            known_parts.append(f"timeline: {symptoms['timeline']}")
+        if has_eating:
+            known_parts.append(f"eating/drinking: {symptoms['eating_drinking']}")
+        if has_energy:
+            known_parts.append(f"energy/behaviour: {symptoms['energy_level']}")
+        known_str = ', '.join(known_parts) if known_parts else 'none yet'
+
+        missing = []
+        if not has_timeline:
+            missing.append('timeline (when symptoms started)')
+        if not has_eating:
+            missing.append('eating / drinking status')
+        if not has_energy:
+            missing.append('energy / behaviour')
+
+        system_prompt = f"""You are a warm veterinary receptionist finishing an intake conversation.
+
+The owner has told you their pet's main problem. You need ONE more piece of information to help the vet prepare.
+
+Pet species : {species}
+Chief complaint : {complaint}
+Context already captured: {known_str}
+Still missing (pick the ONE most relevant): {', '.join(missing)}
+
+YOUR TASK:
+Ask ONE warm, natural, complaint-specific question. Choose the missing field that is MOST RELEVANT to the specific complaint above.
+
+GOOD EXAMPLES:
+- Complaint "vomiting x2 days" → "Is your {species} still drinking water, or has that stopped too?"
+- Complaint "limping on front left leg" → "When did you first notice the limping — did something happen, or did it come on gradually?"
+- Complaint "ruffled feathers, quiet" (bird) → "Has your {species} been eating and passing droppings as usual?"
+- Complaint "not eating" → "How long has your {species} been off food — and is it still drinking?"
+- Complaint "lump on side" → "How long have you noticed the lump — and has it changed in size?"
+- Complaint "routine checkup / wellness" → SKIP
+
+RULES:
+1. Return ONLY the plain question — no preamble, no JSON, just the question text
+2. Make it feel like a natural continuation of the conversation, not a form field
+3. ONE question only — never combine two questions into one turn
+4. Respond in {lang_name}
+5. NEVER name a disease or suggest a diagnosis
+6. If the complaint is clearly a routine wellness visit with nothing to clarify, return exactly the word: SKIP"""
+
+        try:
+            question = llm_call_with_retry(
+                client,
+                model='gpt-4o-mini',
+                max_tokens=80,
+                temperature=0.4,
+                messages=[{'role': 'system', 'content': system_prompt}]
+            )
+            if not question or question.upper() == 'SKIP' or len(question) < 5:
+                return None
+            return question
+        except Exception as e:
+            logger.warning(f'Context enrichment LLM error: {e}')
+            return None
             fq = []
             if not final_species:
                 fq = [self._FALLBACK_ASK_SPECIES.get(lang_code, self._FALLBACK_ASK_SPECIES['en'])]

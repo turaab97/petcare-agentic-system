@@ -30,9 +30,44 @@ Output: red_flag_detected boolean + matched flags + escalation message
 
 import json
 import os
+import re
 import logging
 
 logger = logging.getLogger('petcare.agents.safety_gate')
+
+# ---------------------------------------------------------------------------
+# Temporal past-incident markers
+# ---------------------------------------------------------------------------
+# If any of these words appear within a short window around a red-flag match,
+# the match is treated as a past/resolved incident rather than a current emergency.
+# This prevents false positives like "he ate chocolate last year" or
+# "she had a seizure before, but now she just has a limp".
+
+_PAST_MARKERS = [
+    'last year', 'last month', 'last week', 'last time', 'last night',
+    'a year ago', 'months ago', 'weeks ago', 'days ago', 'ago',
+    'previously', 'before', 'history of', 'used to', 'used to have',
+    'had a', 'had an', 'happened before', 'in the past', 'resolved',
+    'recovered', 'was treated', 'was seen', 'already seen',
+]
+_PAST_WINDOW = 80  # characters either side of a flag match to scan for temporal markers
+
+
+def _is_past_incident(text: str, flag: str) -> bool:
+    """Return True if the flag match appears to be a past / resolved incident."""
+    start = 0
+    while True:
+        idx = text.find(flag.lower(), start)
+        if idx == -1:
+            break
+        window_start = max(0, idx - _PAST_WINDOW)
+        window_end   = min(len(text), idx + len(flag) + _PAST_WINDOW)
+        window = text[window_start:window_end]
+        for marker in _PAST_MARKERS:
+            if marker in window:
+                return True
+        start = idx + 1
+    return False
 
 # ---------------------------------------------------------------------------
 # Default Red Flag List
@@ -208,11 +243,14 @@ class SafetyGateAgent:
         combined_text = f"{chief_complaint} {symptom_text}"
 
         # Check each red flag term against the combined text.
-        # Using simple substring matching for reliability.
+        # Skip matches that appear to be past/resolved incidents (temporal filter).
         detected_flags = []
         for flag in self.red_flags:
             if flag.lower() in combined_text:
-                detected_flags.append(flag)
+                if _is_past_incident(combined_text, flag):
+                    logger.debug(f"Red flag '{flag}' skipped — appears to be past incident")
+                else:
+                    detected_flags.append(flag)
 
         red_flag_detected = len(detected_flags) > 0
 

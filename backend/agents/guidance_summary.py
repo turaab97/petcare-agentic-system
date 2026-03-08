@@ -37,6 +37,7 @@ import os
 import json
 import openai
 from langsmith.wrappers import wrap_openai
+from backend.utils.llm_utils import llm_call_with_retry
 
 
 def _sanitize_for_prompt(value: str, max_len: int = 200) -> str:
@@ -254,8 +255,9 @@ Respond with exactly:
                   f"Symptom area: {symptom_area}\nChief complaint: {chief_complaint}")
 
         try:
-            # Single LLM call for do/dont/watch_for; fallback to area templates on error.
-            g_resp = client.chat.completions.create(
+            # Single LLM call with retry for do/dont/watch_for; fallback to area templates on error.
+            g_raw = llm_call_with_retry(
+                client,
                 model='gpt-4o-mini',
                 max_tokens=400,
                 temperature=0.3,
@@ -263,8 +265,7 @@ Respond with exactly:
                     {'role': 'system', 'content': g_system},
                     {'role': 'user', 'content': g_user}
                 ]
-            )
-            g_raw = g_resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
+            ).replace('```json', '').replace('```', '').strip()
             g_parsed = json.loads(g_raw)
             guidance = {
                 'do': g_parsed.get('do', GENERAL_GUIDANCE['do']),

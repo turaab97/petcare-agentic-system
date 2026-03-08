@@ -35,6 +35,7 @@ import os
 import json
 import openai
 from langsmith.wrappers import wrap_openai
+from backend.utils.llm_utils import llm_call_with_retry
 
 # os/json/openai for LLM triage; fallback to _rule_based_triage on error. (Syed Ali Turab, Mar 4, 2026)
 logger = logging.getLogger('petcare.agents.triage')
@@ -84,11 +85,14 @@ class TriageAgent:
         """Initialize the Triage Agent."""
         self.agent_name = 'triage'
 
-    def process(self, intake_data: dict, safety_result: dict) -> dict:
-        # LLM triage: classify urgency from species, complaint, timeline, eating, energy. No diagnosis names. (Syed Ali Turab, Mar 4, 2026)
+    def process(self, intake_data: dict, safety_result: dict, pet_profile: dict = None) -> dict:
+        # LLM triage: classify urgency from species, complaint, timeline, eating, energy, breed, age, weight. (Syed Ali Turab, Mar 4, 2026)
         client = wrap_openai(openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
-        species = (intake_data.get('species') or
-                   intake_data.get('pet_profile', {}).get('species', 'unknown'))
+        profile = pet_profile or intake_data.get('pet_profile', {})
+        species = (intake_data.get('species') or profile.get('species', 'unknown'))
+        breed  = profile.get('breed', '')
+        age    = profile.get('age', '')
+        weight = profile.get('weight', '')
         complaint = intake_data.get('chief_complaint', '')
         timeline = (intake_data.get('timeline', '') or
                     intake_data.get('symptom_details', {}).get('timeline', ''))
@@ -105,7 +109,8 @@ HARD RULES — never violate:
 3. The rationale field is read ONLY by clinic staff — use clinical observation language but NO diagnosis names
 4. Describe observations only: e.g. "vomiting x2 days + not eating = warrants same-day evaluation" — NOT "likely gastroenteritis"
 5. Be conservative but accurate — lethargy or not eating alone without other acute signs is Same-day or Soon, NOT Emergency. Reserve Emergency only for immediate life-threatening presentations: collapse, inability to breathe, active seizure, known toxin ingestion, severe trauma, or uncontrolled bleeding.
-6. Respond ONLY with valid JSON — no markdown, no preamble
+6. Age context: geriatric (>8 yrs dog, >10 yrs cat) or very young (<6 months) animals warrant one tier higher when borderline.
+7. Respond ONLY with valid JSON — no markdown, no preamble
 
 Urgency tiers (use exactly these strings):
 - Emergency: life-threatening, go to ER now
@@ -121,12 +126,18 @@ Respond with exactly:
   "contributing_factors": ["observable factor 1", "observable factor 2"]
 }"""
 
-        user_msg = (f"Species: {species}\nChief complaint: {complaint}\n"
+        profile_parts = [f"Species: {species}"]
+        if breed:  profile_parts.append(f"Breed: {breed}")
+        if age:    profile_parts.append(f"Age: {age}")
+        if weight: profile_parts.append(f"Weight: {weight}")
+        user_msg = ('\n'.join(profile_parts) +
+                    f"\nChief complaint: {complaint}\n"
                     f"Timeline: {timeline}\nEating/drinking: {eating}\nEnergy level: {energy}")
 
         try:
-            # Single LLM call; parse JSON and validate tier. (Syed Ali Turab, Mar 4, 2026)
-            resp = client.chat.completions.create(
+            # Single LLM call with retry; parse JSON and validate tier.
+            raw = llm_call_with_retry(
+                client,
                 model='gpt-4o-mini',
                 max_tokens=300,
                 temperature=0.1,
@@ -134,8 +145,7 @@ Respond with exactly:
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_msg}
                 ]
-            )
-            raw = resp.choices[0].message.content.strip().replace('```json', '').replace('```', '').strip()
+            ).replace('```json', '').replace('```', '').strip()
             parsed = json.loads(raw)
             tier = parsed.get('urgency_tier', 'Soon')
             if tier not in ['Emergency', 'Same-day', 'Soon', 'Routine']:

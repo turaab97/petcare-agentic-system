@@ -52,10 +52,10 @@ class SchedulingAgent:
 
         Args:
             slots_path: Optional path to available_slots.json.
-                        If not provided, generates mock slots dynamically.
+                        If not provided, generates mock slots dynamically per request.
         """
         self.agent_name = 'scheduling'
-        self.available_slots = self._load_slots(slots_path)
+        self.slots_path = slots_path  # defer slot generation to process() so dates stay fresh
 
     def _load_slots(self, path: str = None) -> list:
         """
@@ -140,6 +140,9 @@ class SchedulingAgent:
               - confidence (float): 0.9 if slots found, 0.5 if not
               - warnings (list): Warning if no matching slots
         """
+        # Regenerate slots fresh on every request so dates are always relative to now.
+        available_slots = self._load_slots(self.slots_path)
+
         urgency = (
             triage_result
             .get('output', {})
@@ -169,7 +172,7 @@ class SchedulingAgent:
 
         # Filter slots: must be available + provider in the pool
         matching_slots = [
-            s for s in self.available_slots
+            s for s in available_slots
             if s.get('available') and s.get('provider') in providers
         ]
 
