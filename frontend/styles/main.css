@@ -1056,12 +1056,69 @@ button:disabled {
     gap: 10px;
     align-items: center;
     font-size: 0.8125rem;
-    padding: 6px 0;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.history-entry:hover,
+.history-entry:focus {
+    background: var(--hover, rgba(0,0,0,0.05));
+    outline: none;
 }
 
 .history-entry:last-child {
     border-bottom: none;
+}
+
+#history-detail-panel {
+    margin-top: 10px;
+    padding: 12px;
+    background: var(--surface, #f9f9f9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.825rem;
+    line-height: 1.5;
+}
+
+#history-detail-panel h4 {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+}
+
+#history-detail-panel .detail-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+#history-detail-panel .detail-label {
+    font-weight: 500;
+    min-width: 110px;
+    color: var(--text-muted);
+}
+
+#history-detail-panel .detail-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+#history-detail-panel .detail-actions button {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--primary, #4f8ef7);
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+#history-detail-panel .detail-actions button.secondary {
+    background: transparent;
+    color: var(--text);
 }
 
 .history-date {
