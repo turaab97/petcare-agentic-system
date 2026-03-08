@@ -978,7 +978,7 @@ async function sendMessage(source = 'text') {
             document.getElementById('chat-messages').innerHTML = '';
             lastTriageState = 'intake';
             addMessage(data.message, 'assistant');
-            speakText(data.message);
+            speakText(_ttsExcerpt(data.message, data.state));
             return;
         }
 
@@ -987,7 +987,10 @@ async function sendMessage(source = 'text') {
             (data.message && data.message.includes('EMERGENCY'));
 
         addMessage(data.message, 'assistant', isEmergency);
-        speakText(data.message);
+        // For terminal states (complete/emergency/booked) the message contains the
+        // full guidance text — reading it all via TTS sounds robotic and disruptive.
+        // Speak only the first paragraph (up to first double-newline or 300 chars).
+        speakText(_ttsExcerpt(data.message, data.state));
         lastTriageState = data.state;
 
         if (isEmergency) {
@@ -1160,6 +1163,25 @@ async function transcribeAudio(audioBlob) {
  *
  * @param {string} text - The text to speak aloud
  */
+/**
+ * Return the portion of a message that should be spoken aloud via TTS.
+ *
+ * For short conversational replies (intake state) we read the full text.
+ * For terminal states (complete / emergency / booked) the message contains
+ * the full guidance block — reading it entirely sounds robotic and takes too
+ * long.  We read only the first paragraph (up to the first blank line) or
+ * the first 280 characters, whichever is shorter.
+ */
+function _ttsExcerpt(text, state) {
+    if (!text) return '';
+    const TERMINAL = new Set(['complete', 'emergency', 'booked']);
+    if (!TERMINAL.has(state)) return text;
+    // First double-newline marks end of introductory sentence
+    const breakIdx = text.indexOf('\n\n');
+    const excerpt = breakIdx > 0 ? text.slice(0, breakIdx) : text;
+    return excerpt.length > 280 ? excerpt.slice(0, 280).replace(/\s\S+$/, '…') : excerpt;
+}
+
 async function speakText(text) {
     if (!ttsEnabled || !text) return;
 

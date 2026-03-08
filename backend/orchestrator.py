@@ -34,6 +34,61 @@ import guardrails
 
 
 # ---------------------------------------------------------------------------
+# Invalid species guardrails
+# ---------------------------------------------------------------------------
+# Species values that must never be accepted — regardless of how they arrived
+# (LLM extraction, keyword fallback, or user free-text).
+
+# Humans described as pets — we respond with a compassionate redirect.
+_INVALID_SPECIES_HUMANS = frozenset({
+    # English
+    'human', 'humans', 'person', 'people', 'man', 'men', 'woman', 'women',
+    'boy', 'girl', 'child', 'children', 'baby', 'babies', 'infant', 'toddler',
+    'teenager', 'teen', 'adult', 'elderly', 'senior', 'patient',
+    'husband', 'wife', 'spouse', 'partner', 'boyfriend', 'girlfriend',
+    'friend', 'neighbour', 'neighbor', 'sibling', 'brother', 'sister',
+    # French
+    'homme', 'femme', 'enfant', 'bébé', 'personne', 'gens', 'mari', 'épouse',
+    'garçon', 'fille', 'adulte', 'bébé', 'nourrisson', 'adolescent',
+    # Spanish
+    'hombre', 'mujer', 'niño', 'niña', 'bebé', 'persona', 'personas',
+    'marido', 'esposa', 'amigo', 'hermano', 'hermana',
+    # Chinese
+    '人', '男人', '女人', '孩子', '婴儿', '男孩', '女孩', '老人', '成人', '朋友',
+    # Arabic
+    'إنسان', 'شخص', 'رجل', 'امرأة', 'طفل', 'طفلة', 'رضيع', 'صديق',
+    # Hindi
+    'इंसान', 'व्यक्ति', 'आदमी', 'औरत', 'बच्चा', 'बच्ची', 'शिशु', 'दोस्त',
+    # Urdu
+    'انسان', 'شخص', 'مرد', 'عورت', 'بچہ', 'بچی', 'دوست',
+})
+
+# Clearly fictional creatures — we respond with a gentle redirect.
+_INVALID_SPECIES_FICTIONAL = frozenset({
+    'dragon', 'dragons', 'unicorn', 'unicorns', 'phoenix', 'griffin', 'griffon',
+    'gryphon', 'pegasus', 'mermaid', 'vampire', 'zombie', 'werewolf', 'goblin',
+    'elf', 'fairy', 'sprite', 'demon', 'angel', 'centaur', 'minotaur',
+    'kraken', 'hydra', 'chimera', 'manticore', 'basilisk',
+})
+
+# Words in the current message that strongly suggest a complaint rather than
+# a species name — used in the exotic species Pass 1b guard.
+_COMPLAINT_WORDS = frozenset({
+    'sick', 'ill', 'hurt', 'pain', 'vomit', 'vomiting', 'limp', 'limping',
+    'bleeding', 'breathing', 'seizure', 'collapse', 'eating', 'drinking',
+    'sleeping', 'lethargic', 'swollen', 'itching', 'scratching', 'coughing',
+    'sneezing', 'diarrhea', 'constipated', 'lumps', 'bump', 'infection',
+    'wound', 'injury', 'fever', 'discharge', 'sores', 'rash', 'losing',
+    'gained', 'weight', 'water', 'food', 'lately', 'yesterday', 'today',
+    'week', 'days', 'hours', 'morning', 'night', 'suddenly', 'gradually',
+    'worse', 'better', 'same', 'normal', 'abnormal', 'unusual',
+    # common short stopwords that are never species
+    'not', 'no', 'yes', 'ok', 'the', 'my', 'our', 'a', 'an', 'is', 'has',
+    'and', 'or', 'but', 'so', 'very', 'really', 'just', 'too', 'its',
+    'hi', 'hello', 'hey', 'please', 'thank', 'thanks', 'also',
+})
+
+# ---------------------------------------------------------------------------
 # Session state constants
 # ---------------------------------------------------------------------------
 # Raw string literals were scattered throughout the codebase ("intake",
@@ -80,6 +135,8 @@ _UI_STRINGS = {
         'already_booked': 'Your appointment is already booked! If you\'d like to start a new session, just say **"start over"**.',
         'would_you_book': 'Would you like to book one of these appointments?\n\n{slots}\n\nJust say which one (e.g. **"book the first one"** or **"Tuesday with Dr. Patel"**), or say **"start over"** for a new concern.',
         'triage_complete': 'Your triage is complete. You can say **"start over"** to begin a new session for a different concern.',
+        'invalid_species_human': "I'm here to help with pet health concerns only. For human medical issues, please contact a doctor or call emergency services if needed. What type of pet do you have?",
+        'invalid_species_fictional': "I can only help with real animals! It sounds like you may be describing a fictional creature. Could you tell me what type of pet you actually have? (dog, cat, rabbit, hamster, axolotl — any real animal works!)",
     },
     'fr': {
         'ask_species': 'Quel type d\'animal avez-vous ? (chien, chat ou autre)',
@@ -100,6 +157,8 @@ _UI_STRINGS = {
         'already_booked': 'Votre rendez-vous est déjà réservé ! Dites **"recommencer"** pour une nouvelle session.',
         'would_you_book': 'Souhaitez-vous réserver l\'un de ces rendez-vous ?\n\n{slots}\n\nDites simplement lequel (par ex. **"réserver le premier"** ou **"mardi avec Dr. Patel"**), ou dites **"recommencer"** pour un autre problème.',
         'triage_complete': 'Votre triage est terminé. Vous pouvez dire **"recommencer"** pour une nouvelle session.',
+        'invalid_species_human': "Je suis ici pour aider avec la santé des animaux de compagnie uniquement. Pour des problèmes médicaux humains, veuillez contacter un médecin. Quel type d'animal avez-vous ?",
+        'invalid_species_fictional': "Je peux uniquement aider avec des animaux réels ! Quel type d'animal avez-vous ? (chien, chat, lapin, hamster — tout animal réel fonctionne !)",
     },
     'es': {
         'ask_species': '¿Qué tipo de mascota tiene? (perro, gato u otro)',
@@ -120,6 +179,8 @@ _UI_STRINGS = {
         'already_booked': '¡Su cita ya está reservada! Diga **"empezar de nuevo"** para una nueva sesión.',
         'would_you_book': '¿Le gustaría reservar una de estas citas?\n\n{slots}\n\nDiga cuál (por ej. **"reservar la primera"** o **"martes con Dr. Patel"**), o diga **"empezar de nuevo"** para otra consulta.',
         'triage_complete': 'Su triage está completo. Puede decir **"empezar de nuevo"** para una nueva sesión.',
+        'invalid_species_human': "Solo puedo ayudar con problemas de salud de mascotas. Para emergencias humanas, comuníquese con un médico. ¿Qué tipo de mascota tiene?",
+        'invalid_species_fictional': "¡Solo puedo ayudar con animales reales! ¿Qué tipo de mascota tiene? (perro, gato, conejo, hámster — cualquier animal real funciona)",
     },
     'zh': {
         'ask_species': '您的宠物是什么类型？（狗、猫或其他）',
@@ -140,6 +201,8 @@ _UI_STRINGS = {
         'already_booked': '您的预约已经预订！说 **"重新开始"** 开始新会话。',
         'would_you_book': '您想预约以下哪个时间？\n\n{slots}\n\n请说您想选哪个（如 **"预约第一个"** 或 **"周二与Patel医生"**），或说 **"重新开始"** 处理其他问题。',
         'triage_complete': '您的分诊已完成。您可以说 **"重新开始"** 开始新会话。',
+        'invalid_species_human': "我只能帮助宠物健康问题。对于人类医疗问题，请联系医生。您有什么类型的宠物？",
+        'invalid_species_fictional': "我只能帮助真实的动物！您有什么类型的宠物？（狗、猫、兔子、仓鼠——任何真实动物都可以！）",
     },
     'ar': {
         'ask_species': 'ما نوع حيوانك الأليف؟ (كلب، قطة، أو غير ذلك)',
@@ -160,6 +223,8 @@ _UI_STRINGS = {
         'already_booked': 'موعدك محجوز بالفعل! قل **"ابدأ من جديد"** لجلسة جديدة.',
         'would_you_book': 'هل تريد حجز أحد هذه المواعيد؟\n\n{slots}\n\nقل أي واحد (مثلاً **"احجز الأول"** أو **"الثلاثاء مع د. باتيل"**)، أو قل **"ابدأ من جديد"** لمشكلة أخرى.',
         'triage_complete': 'اكتمل التقييم. يمكنك قول **"ابدأ من جديد"** لجلسة جديدة.',
+        'invalid_species_human': "أنا هنا للمساعدة في صحة الحيوانات الأليفة فقط. للمشاكل الطبية البشرية، يرجى الاتصال بطبيب. ما نوع حيوانك الأليف؟",
+        'invalid_species_fictional': "يمكنني فقط مساعدة الحيوانات الحقيقية! ما نوع حيوانك الأليف؟ (كلب، قطة، أرنب، هامستر — أي حيوان حقيقي يناسب!)",
     },
     'hi': {
         'ask_species': 'आपका पालतू जानवर किस प्रकार का है? (कुत्ता, बिल्ली, या अन्य)',
@@ -180,6 +245,8 @@ _UI_STRINGS = {
         'already_booked': 'आपकी अपॉइंटमेंट पहले से बुक है! **"फिर से शुरू करें"** कहें नए सत्र के लिए।',
         'would_you_book': 'क्या आप इनमें से कोई अपॉइंटमेंट बुक करना चाहेंगे?\n\n{slots}\n\nबस बताएँ कौन सी (जैसे **"पहली बुक करें"** या **"मंगलवार Dr. Patel के साथ"**), या **"फिर से शुरू करें"** कहें अन्य समस्या के लिए।',
         'triage_complete': 'आपका ट्राइएज पूरा हो गया है। आप **"फिर से शुरू करें"** कह सकते हैं नए सत्र के लिए।',
+        'invalid_species_human': "मैं केवल पालतू जानवरों की स्वास्थ्य समस्याओं में मदद कर सकता हूँ। मानव चिकित्सा समस्याओं के लिए कृपया एक डॉक्टर से संपर्क करें। आपका पालतू जानवर किस प्रकार का है?",
+        'invalid_species_fictional': "मैं केवल वास्तविक जानवरों की मदद कर सकता हूँ! आपका पालतू जानवर किस प्रकार का है? (कुत्ता, बिल्ली, खरगोश, हैम्स्टर — कोई भी वास्तविक जानवर चलेगा!)",
     },
     'ur': {
         'ask_species': 'آپ کا پالتو جانور کس قسم کا ہے؟ (کتا، بلی، یا کوئی اور)',
@@ -200,6 +267,8 @@ _UI_STRINGS = {
         'already_booked': 'آپ کی ملاقات پہلے سے بک ہے! **"دوبارہ شروع کریں"** کہیں نئے سیشن کے لیے۔',
         'would_you_book': 'کیا آپ ان میں سے کوئی ملاقات بک کرنا چاہیں گے?\n\n{slots}\n\nبس بتائیں کون سی (مثلاً **"پہلی بک کریں"** یا **"منگل Dr. Patel کے ساتھ"**), یا **"دوبارہ شروع کریں"** کہیں کسی اور مسئلے کے لیے۔',
         'triage_complete': 'آپ کا ٹرائیج مکمل ہو گیا ہے۔ آپ نئے سیشن کے لیے **"دوبارہ شروع کریں"** کہ سکتے ہیں۔',
+        'invalid_species_human': "میں صرف پالتو جانوروں کی صحت سے متعلق مسائل میں مدد کر سکتا ہوں۔ انسانی طبی مسائل کے لیے براہ کرم ڈاکٹر سے رابطہ کریں۔ آپ کا پالتو جانور کس قسم کا ہے؟",
+        'invalid_species_fictional': "میں صرف حقیقی جانوروں کی مدد کر سکتا ہوں! آپ کا پالتو جانور کس قسم کا ہے؟ (کتا، بلی، خرگوش، ہیمسٹر — کوئی بھی حقیقی جانور چلے گا!)",
     },
 }
 
@@ -656,18 +725,62 @@ class Orchestrator:
         detected_species, matched_keyword = _detect_species_in(cur_lower)
         if detected_species:
             _apply_species(detected_species, matched_keyword)
-        elif not intake_out.get('species') and not session_profile.get('species'):
-            # Pass 2: scan all prior messages only when species is still unknown
-            all_user_text = cur_lower
-            for msg in self.session.get('messages', []):
-                if msg.get('role') == 'user':
-                    all_user_text += ' ' + str(msg.get('content', '')).lower()
-            detected_species, matched_keyword = _detect_species_in(all_user_text)
-            if detected_species:
-                _apply_species(detected_species, matched_keyword)
+        else:
+            # Pass 1b: exotic species fallback for uncommon pet names not in the keyword dict.
+            # If the current message is 1–2 meaningful words that look like a species name
+            # (not a complaint phrase, not human, not fictional), accept the text as-is.
+            # This handles: "axolotl", "capybara", "sugar glider", "fennec fox" etc.
+            words = [w for w in cur_lower.strip().split()
+                     if len(w) > 2 and w not in _COMPLAINT_WORDS]
+            if 1 <= len(words) <= 2:
+                candidate = ' '.join(words)
+                is_human = (candidate in _INVALID_SPECIES_HUMANS
+                            or any(w in _INVALID_SPECIES_HUMANS for w in words))
+                is_fictional = (candidate in _INVALID_SPECIES_FICTIONAL
+                                or any(w in _INVALID_SPECIES_FICTIONAL for w in words))
+                if not is_human and not is_fictional:
+                    # Only apply if this looks like a genuine new species mention:
+                    # either we have no species yet, or the new candidate differs
+                    # from what's already stored (correction scenario).
+                    stored = session_profile.get('species', '')
+                    if not stored or candidate != stored.lower():
+                        intake_out['species'] = candidate
+                        self.session.setdefault('pet_profile', {})['species'] = candidate
+                        intake_out.setdefault('pet_profile', {})['species'] = candidate
+                        detected_species = candidate
+
+            if not detected_species and not intake_out.get('species') and not session_profile.get('species'):
+                # Pass 2: scan all prior messages only when species is still unknown
+                all_user_text = cur_lower
+                for msg in self.session.get('messages', []):
+                    if msg.get('role') == 'user':
+                        all_user_text += ' ' + str(msg.get('content', '')).lower()
+                detected_species, matched_keyword = _detect_species_in(all_user_text)
+                if detected_species:
+                    _apply_species(detected_species, matched_keyword)
 
         species_val = intake_out.get('species') or session_profile.get('species', '')
         has_species = bool(species_val)
+
+        # Species validity guardrail — block humans and fictional creatures.
+        # Clear the stored species and return a redirect so the intake loop
+        # prompts the owner for a real animal name.
+        if species_val:
+            sv_lower = species_val.lower().strip()
+            sv_words = sv_lower.split()
+            is_human = (sv_lower in _INVALID_SPECIES_HUMANS
+                        or any(w in _INVALID_SPECIES_HUMANS for w in sv_words))
+            is_fictional = (sv_lower in _INVALID_SPECIES_FICTIONAL
+                            or any(w in _INVALID_SPECIES_FICTIONAL for w in sv_words))
+            if is_human or is_fictional:
+                # Wipe the bad species from session so it doesn't persist
+                self.session.get('pet_profile', {}).pop('species', None)
+                msg_key = 'invalid_species_human' if is_human else 'invalid_species_fictional'
+                return self._build_response(
+                    message=self._t(msg_key),
+                    state=SessionState.INTAKE,
+                    agents=['species_guardrail']
+                )
 
         raw_complaint = (
             intake_out.get('chief_complaint')
