@@ -45,7 +45,7 @@ petcare-agentic-system/
 │   │   ├── intake_agent.py         # Agent A: symptom collection, adaptive follow-ups
 │   │   ├── safety_gate_agent.py    # Agent B: red-flag detection, emergency escalation
 │   │   ├── confidence_gate.py      # Agent C: field validation, confidence scoring
-│   │   ├── triage_agent.py         # Agent D: urgency classification (4 tiers)
+│   │   ├── triage_agent.py         # Agent D: urgency classification (LLM + RAG grounding)  [v1.1]
 │   │   ├── routing_agent.py        # Agent E: symptom category → appointment type
 │   │   ├── scheduling_agent.py     # Agent F: slot matching, booking request
 │   │   └── guidance_summary.py     # Agent G: owner guidance + clinic summary
@@ -53,7 +53,11 @@ petcare-agentic-system/
 │   ├── data/                       # Static data files (POC — replaces a database)
 │   │   ├── clinic_rules.json       # Triage rules, routing maps, provider list
 │   │   ├── red_flags.json          # 50+ emergency trigger phrases
-│   │   └── available_slots.json    # Mock appointment schedule
+│   │   ├── available_slots.json    # Mock appointment schedule
+│   │   └── pet_illness_kb.json     # [v1.1] 24-entry illness KB for RAG-grounded triage (ASPCA/AVMA/Cornell/VCA)
+│   │
+│   ├── utils/                      # Shared backend utilities
+│   │   └── rag_retriever.py        # [v1.1] Keyword-overlap RAG retriever over pet_illness_kb.json
 │   │
 │   └── logs/                       # Runtime logs (gitignored except .gitkeep)
 │       └── .gitkeep

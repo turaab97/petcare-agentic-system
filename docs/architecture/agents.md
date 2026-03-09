@@ -61,9 +61,10 @@ Agents are specialized sub-components that receive structured input, perform a f
 ### D. Triage Agent
 
 - **Trigger:** Confidence gate passes
-- **Logic:** Classify urgency into 4 tiers based on symptoms, timeline, species, **breed, age, and weight** (from `pet_profile`). Age-based modifier: geriatric (>8yr dog, >10yr cat) or very young (<6 months) bumped one tier higher when borderline. Provide rationale (no diagnosis names) and confidence score.
+- **Logic:** Classify urgency into 4 tiers based on symptoms, timeline, species, **breed, age, and weight** (from `pet_profile`). Age-based modifier: geriatric (>8yr dog, >10yr cat) or very young (<6 months) bumped one tier higher when borderline. **RAG grounding (v1.1):** Before the LLM call, `retrieve_illness_context()` scores the chief complaint against `pet_illness_kb.json` (24 entries, keyword-overlap scoring, species bonus +2, category bonus +1) and injects the top-3 results as a `=== CLINICAL REFERENCE ===` block into the system prompt. This provides the LLM with evidence-based urgency escalators, red flags, and species-specific notes from curated ASPCA/AVMA/Cornell sources — reducing hallucination and ensuring conservative triage decisions are grounded in clinical data. Provide rationale (no diagnosis names) and confidence score. Rule-based fallback (`_rule_based_triage`) used if LLM call fails; RAG context applies only to the primary LLM path.
+- **New dependency (v1.1):** `backend/utils/rag_retriever.py` — keyword-overlap RAG retriever over `backend/data/pet_illness_kb.json`
 - **Output:** `urgency_tier` (Emergency / Same-day / Soon / Routine), `rationale`, `confidence`, `contributing_factors[]`
-- **Edge Cases:** Borderline urgency, multiple concurrent issues
+- **Edge Cases:** Borderline urgency, multiple concurrent issues; TC-04 (male cat urinary blockage) now correctly classified Emergency via URIN-001 KB entry
 
 ### E. Routing Agent
 
@@ -92,16 +93,16 @@ Agents are specialized sub-components that receive structured input, perform a f
 
 Role-based data access enforces minimal privilege and prevents cross-responsibility leakage:
 
-| Agent | `clinic_rules.json` | `red_flags.json` | `available_slots.json` | Intake Records | Appointments |
-|-------|:-:|:-:|:-:|:-:|:-:|
-| **A -- Intake** | -- | -- | -- | -- | -- |
-| **B -- Safety Gate** | -- | Read | -- | -- | -- |
-| **C -- Confidence Gate** | -- | -- | -- | -- | -- |
-| **D -- Triage** | -- | -- | -- | -- | -- |
-| **E -- Routing** | Read | -- | -- | -- | -- |
-| **F -- Scheduling** | -- | -- | Read | -- | Write |
-| **G -- Guidance & Summary** | -- | -- | -- | Write | -- |
-| **Orchestrator** | Read | Read | Read | Read/Write | Read |
+| Agent | `clinic_rules.json` | `red_flags.json` | `available_slots.json` | `pet_illness_kb.json` | Intake Records | Appointments |
+|-------|:-:|:-:|:-:|:-:|:-:|:-:|
+| **A -- Intake** | -- | -- | -- | -- | -- | -- |
+| **B -- Safety Gate** | -- | Read | -- | -- | -- | -- |
+| **C -- Confidence Gate** | -- | -- | -- | -- | -- | -- |
+| **D -- Triage** | -- | -- | -- | Read (via RAG retriever) | -- | -- |
+| **E -- Routing** | Read | -- | -- | -- | -- | -- |
+| **F -- Scheduling** | -- | -- | Read | -- | -- | Write |
+| **G -- Guidance & Summary** | -- | -- | -- | -- | Write | -- |
+| **Orchestrator** | Read | Read | Read | -- | Read/Write | Read |
 
 ### Responsibility Boundaries
 

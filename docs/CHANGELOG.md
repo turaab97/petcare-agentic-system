@@ -485,6 +485,81 @@ Created foundational docs: `README.md`, `docs/architecture.md`, `docs/agent-desi
 
 ---
 
+## feature/clinic-triage-pivot — Clinic Triage Pivot (RAG + Scope Redirect) — 2026-03-08
+
+**Branch:** `feature/clinic-triage-pivot` → merged into `main`
+**Tag:** `v1.0-owner-portal` preserves the pre-pivot pet-owner-portal version
+
+This release reframes the system from a **pet-owner self-service portal (v1.0)** to a **clinic-facing triage tool (v1.1)**. The core change: the Triage Agent's LLM now receives grounding evidence from a curated illness knowledge base before classifying urgency — reducing hallucination and fixing TC-04 (urinary blockage under-triage).
+
+---
+
+### RAG Illness Knowledge Base (`backend/data/pet_illness_kb.json`) [NEW FILE]
+
+- **24 curated illness entries** sourced from ASPCA, AVMA, Cornell Feline Health Center, and VCA
+- Categories covered: GI, respiratory, urological, toxicological, neurological, cardiovascular, dermatological, dental, reproductive, trauma/pain, parasitic, orthopedic, endocrine, ophthalmic, multi-system
+- Each entry contains:
+  - `id`, `name`, `category`, `species[]` — identity and scope
+  - `keywords[]` — tokenisable phrases for retrieval scoring
+  - `typical_urgency` — evidence-based default tier (Emergency / Same-day / Soon / Routine)
+  - `urgency_escalators[]` — conditions that bump urgency higher
+  - `urgency_de_escalators[]` — conditions that lower urgency
+  - `key_triage_notes` — clinical guidance for the LLM
+  - `red_flags[]` — presentation signs that demand immediate escalation
+  - `species_notes{}` — species-specific caveats (dog / cat / rabbit etc.)
+- **URIN-001** (urinary blockage, `Emergency`) explicitly captures "male cat straining with no output" as an escalator — this is the fix for TC-04
+
+### RAG Retriever (`backend/utils/rag_retriever.py`) [NEW FILE]
+
+- Keyword-overlap scoring: tokenise complaint (lowercase, regex) → match keyword phrases → +1 per matched phrase
+- Species bonus: +2 if entry species list includes the query species
+- Category bonus: +1 if entry category appears verbatim in query text
+- `min_score=1` threshold — unmatched entries are excluded entirely
+- Top-k selection (default `top_k=3`), sorted by score descending
+- `@lru_cache(maxsize=1)` on KB loader — file parsed once at first call, zero overhead thereafter
+- Public API:
+  - `retrieve_illness_context(complaint, species, top_k)` → `list[dict]`
+  - `format_rag_context(entries, species)` → `str` — formats as `=== CLINICAL REFERENCE ===` block for LLM injection
+- No vector DB, no embeddings — deterministic, <1ms retrieval, zero external dependency
+
+### Triage Agent — RAG Integration (`backend/agents/triage_agent.py`) [MODIFIED]
+
+- Added import: `from backend.utils.rag_retriever import retrieve_illness_context, format_rag_context`
+- Before each LLM triage call: retrieve top-3 illness KB entries relevant to `chief_complaint` + species
+- Inject formatted clinical reference block as the final section of the LLM system prompt
+- LLM now has evidence-based urgency escalators, red flags, and species-specific notes available when classifying urgency
+- Rule-based fallback (`_rule_based_triage`) is unchanged — RAG only applies to the primary LLM path
+
+### Non-Illness Scope Redirect (`backend/orchestrator.py`) [MODIFIED]
+
+- Added `_NON_ILLNESS_PATTERNS` class attribute — 6 compiled regex groups:
+  1. Food/diet: "what should I feed my dog?", "can cats eat X?"
+  2. Training/behaviour: "how do I potty train my puppy?", "how to stop my dog barking?"
+  3. Grooming: "how often should I bathe my cat?", "grooming tips for golden retriever"
+  4. Breed info: "what breed is good for apartments?", "which breed doesn't shed?"
+  5. Pricing/adoption: "how much does a puppy cost?", "where can I adopt a cat?"
+  6. Registration/microchipping: "how do I register my dog?", "pet licensing"
+- **Medical guard**: redirect fires ONLY when `_MEDICAL_WORDS_RE` finds NO symptom words in the same message — "my dog won't eat" (medical) passes through; "what should I feed my dog?" (general) is redirected
+- Added **check 5** in `_pre_intake_screen()` — runs after all 4 existing guardrail checks; returns scope redirect response when pattern matches
+- Added `non_illness_scope` i18n key to all 7 language dicts (EN / FR / ES / ZH / AR / HI / UR)
+
+### Pivot Story Documentation
+
+- **`README.md`**: Added "📖 The Pivot Story — How This System Evolved" section
+- **`finalreport.md`**: Added Section 7 "The Pivot Story — From Pet Owner Chatbot to Clinic Triage Tool"
+- **`docs/AGENT_DESIGN_CANVAS.md`**: Added Step 10 "Pivot Story — From Pet Owner Portal to Clinic Triage Tool"
+
+### Test Case Impact
+
+| Test Case | Before Pivot | After Pivot |
+|-----------|-------------|-------------|
+| TC-04 (urinary blockage — male cat straining) | FAIL — LLM classified Same-day; expected Emergency | PASS — URIN-001 retrieved; LLM grounded to Emergency |
+| TC-04b (non-illness scope redirect) [NEW] | N/A | PASS — general pet Q&A redirected with scope message |
+| TC-01 to TC-05 (intake turn counts) | Counts reflect pre-pet-name/breed intake | +1–2 turns for pet name + breed steps (added in fix/ux-bugs-03-04) |
+| TC-06 to TC-23 | All passing | No change |
+
+---
+
 ## Reading Order for New Developers
 
 1. `README.md` — Project purpose, architecture diagrams, quick start

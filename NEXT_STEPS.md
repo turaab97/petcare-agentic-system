@@ -2,9 +2,11 @@
 
 **Authors:** Syed Ali Turab, Fergie Feng & Diana Liu | **Team:** Broadview | **Date:** March 1, 2026
 
-**Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 6, 2026*
+**Due date:** March 22, 2026 · **Target build complete:** March 10–11, 2026 · *Last updated: March 9, 2026*
 
-**POC plan alignment:** Steps 1–9 are **done**. All consumer features are **built**. Deployment is **Render** ([DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)). Webhook/n8n is **optional** for POC.
+**POC plan alignment:** Steps 1–10 are **done**. All consumer features are **built**. Deployment is **Render** ([DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)). Webhook/n8n is **optional** for POC.
+
+> **v1.1 (2026-03-08):** Clinic triage pivot merged to `main`. RAG illness KB (24 entries, `pet_illness_kb.json`) + keyword-overlap retriever (`rag_retriever.py`) now ground Triage Agent LLM decisions. TC-04 (urinary blockage) **fixed**. Non-illness scope redirect added. 23/23 test cases passing (100%).
 
 This document is the **action plan** for the POC build. Steps 1–9 are **done**; the pipeline runs end-to-end with 100% M2/M4 accuracy. All consumer-ready features, frontend redesign, auth, and deployment are complete. Remaining: report + demo video (Step 10).
 
@@ -32,7 +34,7 @@ This document is the **action plan** for the POC build. Steps 1–9 are **done**
 | **Intake Agent (A)** | ✅ Done | GPT-4o-mini; adaptive follow-ups; any animal species |
 | **Safety Gate (B)** | ✅ Done | Rule-based; 50+ red flags; 100% M4 detection |
 | **Confidence Gate (C)** | ✅ Done | Rule-based; REQUIRED_FIELDS, action thresholds |
-| **Triage (D)** | ✅ Done | GPT-4o-mini; 100% M2 accuracy on 6 scenarios |
+| **Triage (D)** | ✅ Done | GPT-4o-mini + RAG grounding (v1.1); 100% M2 accuracy; TC-04 fixed |
 | **Routing (E)** | ✅ Done | Rule-based; reads `clinic_rules.json` |
 | **Scheduling (F)** | ✅ Done | Rule-based; reads `available_slots.json` |
 | **Guidance & Summary (G)** | ✅ Done | GPT-4o-mini; species-correct guidance; 7 languages |
@@ -44,7 +46,7 @@ This document is the **action plan** for the POC build. Steps 1–9 are **done**
 | **Session persistence** | ✅ Done | Two-tier: active 1hr + completed 24hr for PDF |
 | **Docker + Gunicorn** | ✅ Done | Production-ready Dockerfile with health check |
 | **Webhook** | ✅ Done | Optional; fires if `N8N_WEBHOOK_URL` set |
-| **Data files** | ✅ Wired | clinic_rules.json, red_flags.json, available_slots.json |
+| **Data files** | ✅ Wired | clinic_rules.json, red_flags.json, available_slots.json, pet_illness_kb.json (v1.1) |
 | **Deployment** | ✅ Render-ready | Deployment guides complete |
 | **Documentation** | ✅ Done | All docs updated to match current POC |
 
@@ -180,6 +182,8 @@ Once the team has finished testing (scenarios validated, evaluation metrics run,
 | Orchestrator flow & branching | `backend/orchestrator.py` |
 | Red-flag list | `backend/data/red_flags.json` |
 | Triage/routing rules | `backend/data/clinic_rules.json` |
+| Illness knowledge base (RAG) | `backend/data/pet_illness_kb.json` — 24 entries, ASPCA/AVMA/Cornell/VCA |
+| RAG retriever | `backend/utils/rag_retriever.py` — keyword-overlap scoring, no vector DB |
 | Test cases & checklist | `docs/test_scenarios.md` |
 | Baseline evaluation (Diana) | `docs/BASELINE_METHODOLOGY.md` — M1–M6, gold labels, comparison procedure |
 | Full roadmap | `PROJECT_PLAN.md` |

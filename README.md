@@ -310,10 +310,10 @@ The PetCare Agent uses a **7-sub-agent architecture** coordinated by a central *
 | # | Agent | Type | Input | Output | Responsibility |
 |---|-------|------|-------|--------|---------------|
 | A | **Intake Agent** | 🔴 LLM | User message + conversation history | Pet profile, chief complaint, follow-up question | Collect species, breed, age, weight, chief complaint, timeline; ask adaptive follow-ups by symptom area (GI, respiratory, derm, injury, urinary, neuro, behavioral). Supports any animal species (dogs, cats, birds, reptiles, fish, horses, exotic). |
-| -- | **Pre-Intake Guardrails** | 🟢 Rules | Raw user message | Block / pass decision | **Comprehensive content-safety screen** (`backend/guardrails.py`): 8 categories — prompt injection / jailbreak (OWASP LLM01, LLM07), data extraction (OWASP LLM02), violence / weapons / terrorism / self-harm / animal cruelty, sexual / explicit / bestiality, human-as-pet, substance abuse (pet context), abuse / harassment / slurs, trolling / off-topic. Leet-speak normalization, multilingual patterns (FR, ES, ZH, AR, HI, UR), pet-medical context exemptions. Runs **before** any LLM call. Plus: deceased pet (compassionate close), non-pet subject redirect, normal animal behavior handling. 181-case test suite. |
+| -- | **Pre-Intake Guardrails** | 🟢 Rules | Raw user message | Block / pass decision | **Comprehensive content-safety screen** (`backend/guardrails.py`): 8 categories — prompt injection / jailbreak (OWASP LLM01, LLM07), data extraction (OWASP LLM02), violence / weapons / terrorism / self-harm / animal cruelty, sexual / explicit / bestiality, human-as-pet, substance abuse (pet context), abuse / harassment / slurs, trolling / off-topic. Leet-speak normalization, multilingual patterns (FR, ES, ZH, AR, HI, UR), pet-medical context exemptions. Runs **before** any LLM call. Plus: deceased pet (compassionate close), non-pet subject redirect, normal animal behavior handling. **v1.1: non-illness scope redirect** (`_NON_ILLNESS_PATTERNS` in orchestrator) — general pet Q&A (food/diet, training, grooming, breed info, pricing, registration) redirected with warm message when no medical symptom words present. 181-case test suite. |
 | B | **Safety Gate Agent** | 🟢 Rules | Extracted symptoms from Intake | Red-flag status, matched keywords | Scan for 50+ emergency trigger phrases from `red_flags.json` (difficulty breathing, seizures, collapse, suspected toxin, inability to urinate, uncontrolled bleeding). Triggers immediate escalation — bypasses triage/routing/booking. |
 | C | **Confidence Gate Agent** | 🟢 Rules | Pet profile fields, symptom data | Proceed / clarify / human-review decision | Verify required fields (species, chief complaint, duration) are present and consistent. If missing → loop back to Intake (max 2x). If conflicting → route to human receptionist review. |
-| D | **Triage Agent** | 🔴 LLM | Complete pet profile + symptoms | Urgency tier, confidence score, rationale | Assign urgency: **Emergency** (life-threatening, within hours), **Same-day** (needs attention today), **Soon** (within 1-3 days), **Routine** (next available). Returns rationale and 0-1 confidence score. |
+| D | **Triage Agent** | 🔴 LLM + RAG | Complete pet profile + symptoms | Urgency tier, confidence score, rationale | Assign urgency: **Emergency** (life-threatening, within hours), **Same-day** (needs attention today), **Soon** (within 1-3 days), **Routine** (next available). Returns rationale and 0-1 confidence score. **v1.1:** Before the LLM call, `rag_retriever.py` scores the complaint against `pet_illness_kb.json` (24 entries, keyword-overlap, species bonus) and injects the top-3 results as a clinical reference block — grounding the LLM with evidence-based urgency escalators and red flags from ASPCA/AVMA/Cornell. |
 | E | **Routing Agent** | 🟢 Rules | Symptom category from Triage | Appointment type, provider pool | Map symptom category to appointment type and provider pool using `clinic_rules.json`. Species-specific routing (cat vs dog vs exotic → different providers). |
 | F | **Scheduling Agent** | 🟢 Rules | Appointment type, urgency tier | Proposed time slots | Query `available_slots.json` for slots matching urgency window. Emergency → earliest available; Routine → next regular slot. |
 | G | **Guidance & Summary** | 🔴 LLM | Full session data (all agent outputs) | Owner guidance + clinic JSON | Generate species-correct "do/don't while waiting" + escalation cues (owner-facing, in session language). Generate structured clinic-ready JSON summary (always English). |
@@ -331,6 +331,7 @@ The PetCare Agent uses a **7-sub-agent architecture** coordinated by a central *
 | `backend/data/clinic_rules.json` | Triage rules, routing maps, provider specialties | Triage (D), Routing (E) |
 | `backend/data/red_flags.json` | 50+ emergency trigger phrases | Safety Gate (B) |
 | `backend/data/available_slots.json` | Mock clinic schedule (30-min slots) | Scheduling (F) |
+| `backend/data/pet_illness_kb.json` | 24-entry illness KB for RAG-grounded triage (ASPCA/AVMA/Cornell/VCA) — v1.1 | Triage (D) via `rag_retriever.py` |
 | In-memory session | Active intake records, appointments | All agents via Orchestrator |
 
 See [docs/architecture/data_model.md](docs/architecture/data_model.md) for full schemas.
@@ -433,6 +434,7 @@ The POC uses only these data files. All are synthetic; no real patient/pet healt
 | `backend/data/clinic_rules.json` | Synthetic config | Routing (E): triage rules, routing maps, provider list |
 | `backend/data/red_flags.json` | Curated list (50+ entries) | Safety Gate (B): emergency triggers |
 | `backend/data/available_slots.json` | Mock data | Scheduling (F): appointment booking POC |
+| `backend/data/pet_illness_kb.json` | Curated KB — 24 entries (ASPCA/AVMA/Cornell/VCA) | Triage (D) via `rag_retriever.py`: RAG-grounded urgency classification (v1.1) |
 
 ### Design references (not used at runtime)
 
@@ -692,14 +694,17 @@ python api_server.py
 │   │   ├── intake_agent.py      # A — Intake (LLM, adaptive follow-ups)
 │   │   ├── safety_gate_agent.py # B — Safety Gate (rule-based, 50+ red flags)
 │   │   ├── confidence_gate.py   # C — Confidence Gate (rule-based, field validation)
-│   │   ├── triage_agent.py      # D — Triage (LLM, urgency classification)
+│   │   ├── triage_agent.py      # D — Triage (LLM + RAG grounding, urgency classification) [v1.1]
 │   │   ├── routing_agent.py     # E — Routing (rule-based, clinic_rules.json)
 │   │   ├── scheduling_agent.py  # F — Scheduling (rule-based, available_slots.json)
 │   │   └── guidance_summary.py  # G — Guidance & Summary (LLM, owner + clinic output)
 │   ├── data/                    # Operational data (synthetic, no PHI)
 │   │   ├── clinic_rules.json    # Triage rules, routing maps, provider specialties
 │   │   ├── red_flags.json       # 50+ emergency trigger phrases
-│   │   └── available_slots.json # Mock clinic schedule (30-min slots)
+│   │   ├── available_slots.json # Mock clinic schedule (30-min slots)
+│   │   └── pet_illness_kb.json  # [v1.1] 24-entry illness KB for RAG-grounded triage (ASPCA/AVMA/Cornell/VCA)
+│   ├── utils/                   # Shared backend utilities
+│   │   └── rag_retriever.py     # [v1.1] Keyword-overlap RAG retriever over pet_illness_kb.json
 │   ├── evaluate.py              # End-to-end evaluation script (6 scenarios)
 │   └── logs/                    # Runtime logs (api_server.log)
 ├── docs/                        # Documentation
@@ -807,7 +812,7 @@ This project is structured for modular expansion. Contributions should preserve:
 
 See the [Data Sources](#-data-sources) section above for the main breakdown. Summary:
 
-- **Operational (used at runtime):** `backend/data/clinic_rules.json`, `red_flags.json`, `available_slots.json` only. All synthetic; no PHI.
+- **Operational (used at runtime):** `backend/data/clinic_rules.json`, `red_flags.json`, `available_slots.json`, `pet_illness_kb.json` (v1.1). All synthetic; no PHI.
 - **Design references (not used at runtime):** HuggingFace pet-health-symptoms-dataset, Vet-AI Symptom Checker, SAVSNET/PetBERT, ASPCA, veterinary textbooks — consulted for domain context and for curating the operational files above.
 
 **Deployment:** POC uses **Render** for cloud deployment. Webhook code is present and fires if `N8N_WEBHOOK_URL` is set, but **no receiving endpoint (n8n, Slack, email) is deployed for the POC demo**.

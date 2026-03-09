@@ -47,6 +47,19 @@ Mock appointment availability for the demo clinic.
 - Clinic operating hours: weekday (9-5), Saturday (9-1), Sunday closed
 - Scheduling Agent (F) reads this at runtime to propose appointment options
 
+### 2.3b Illness Knowledge Base (`pet_illness_kb.json`) [Added v1.1]
+
+Curated clinical reference data used by the Triage Agent's RAG retrieval layer to ground LLM urgency classification decisions.
+
+- **24 illness entries** sourced from ASPCA, AVMA, Cornell Feline Health Center, and VCA
+- Read by `backend/utils/rag_retriever.py` via `retrieve_illness_context()` — **never read directly by agents**
+- Loaded once at first retrieval call via `@lru_cache(maxsize=1)` — zero reload overhead
+- Categories: GI, respiratory, urological, toxicological, neurological, cardiovascular, dermatological, dental, reproductive, trauma/pain, parasitic, orthopedic, endocrine, ophthalmic, multi-system
+- Top-3 matching entries are injected as `=== CLINICAL REFERENCE ===` block into the Triage Agent LLM system prompt
+- This file is maintained separately from `clinic_rules.json` to support independent clinical knowledge updates without touching routing or scheduling logic
+
+See Section 3.5b below for the full field schema.
+
 ### 2.4 Two-Tier Server-Side Session Store (In-Memory)
 
 The POC uses a **two-tier in-memory session store** managed by the Orchestrator:
@@ -185,6 +198,38 @@ In production, this would be persisted to an `intake_records` table:
 
 ---
 
+### 3.5b Illness Knowledge Base Entry (`pet_illness_kb.json`) [Added v1.1]
+
+**File:** `backend/data/pet_illness_kb.json`
+**Read by:** `backend/utils/rag_retriever.py` (via `retrieve_illness_context()`) → Triage Agent (D)
+**Written by:** No agent (manually curated from ASPCA/AVMA/Cornell/VCA, static in POC)
+
+Top-level structure: `{ "version": "1.0", "description": "...", "illnesses": [ ...entries ] }`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier (e.g., `"GI-001"`, `"URIN-001"`) |
+| `name` | string | Illness name (used in `format_rag_context()` output, not shown to owner) |
+| `category` | string | Clinical category (e.g., `"gastrointestinal"`, `"urological"`) — used for category bonus scoring |
+| `species` | string[] | Species this entry applies to (e.g., `["dog", "cat"]`) — used for species bonus (+2) |
+| `keywords` | string[] | Keyword phrases for overlap scoring (e.g., `["vomiting", "not eating", "blood in stool"]`) |
+| `typical_urgency` | string | Default urgency tier: `Emergency` / `Same-day` / `Soon` / `Routine` |
+| `urgency_escalators` | string[] | Conditions that push urgency to a higher tier |
+| `urgency_de_escalators` | string[] | Conditions that allow a lower tier classification |
+| `key_triage_notes` | string | Clinical guidance injected into triage LLM system prompt |
+| `red_flags` | string[] | Presentation signs in this category that require immediate escalation |
+| `species_notes` | object | Keyed by species (`"dog"`, `"cat"`, etc.); species-specific clinical caveats |
+
+**Key entries:**
+- `URIN-001` — Urinary blockage (Emergency): fixes TC-04; "male cat straining with no output" is listed as an urgency escalator
+- `GI-002` — GDV/Bloat (Emergency): "non-productive retching + distended abdomen" → immediate ER
+- `TOXI-001` to `TOXI-004` — Toxin ingestion categories (Emergency): chocolate, xylitol, antifreeze, NSAIDs
+- `NEURO-001` — Seizures/neurological (Emergency / Same-day depending on presentation)
+- `REPRO-001` — Pyometra (Emergency for intact females with systemic signs)
+- `ORTHO-001` — IVDD/spinal pain (Same-day to Emergency based on paralysis signs)
+
+---
+
 ### 3.5 Appointment (Session Object -- In-Memory)
 
 **Produced by:** Scheduling Agent (F)
@@ -237,16 +282,16 @@ In production, this would be persisted to an `appointments` table:
 
 Role-based access control enforces minimal privilege:
 
-| Agent | `clinic_rules` | `red_flags` | `available_slots` | `intake_records` | `appointments` |
-|-------|:-:|:-:|:-:|:-:|:-:|
-| **Intake (A)** | -- | -- | -- | -- | -- |
-| **Safety Gate (B)** | -- | Read | -- | -- | -- |
-| **Confidence Gate (C)** | -- | -- | -- | -- | -- |
-| **Triage (D)** | Read | -- | -- | -- | -- |
-| **Routing (E)** | Read | -- | -- | -- | -- |
-| **Scheduling (F)** | -- | -- | Read | -- | Write |
-| **Guidance & Summary (G)** | -- | -- | -- | Write | -- |
-| **Orchestrator** | Read | Read | Read | Read/Write | Read |
+| Agent | `clinic_rules` | `red_flags` | `available_slots` | `pet_illness_kb` | `intake_records` | `appointments` |
+|-------|:-:|:-:|:-:|:-:|:-:|:-:|
+| **Intake (A)** | -- | -- | -- | -- | -- | -- |
+| **Safety Gate (B)** | -- | Read | -- | -- | -- | -- |
+| **Confidence Gate (C)** | -- | -- | -- | -- | -- | -- |
+| **Triage (D)** | -- | -- | -- | Read (via RAG retriever) | -- | -- |
+| **Routing (E)** | Read | -- | -- | -- | -- | -- |
+| **Scheduling (F)** | -- | -- | Read | -- | -- | Write |
+| **Guidance & Summary (G)** | -- | -- | -- | -- | Write | -- |
+| **Orchestrator** | Read | Read | Read | -- | Read/Write | Read |
 
 - Only the Scheduling Agent writes appointment records
 - Only the Guidance & Summary Agent writes intake records
@@ -288,7 +333,7 @@ Role-based access control enforces minimal privilege:
 2. Intake Agent (A) → produces structured pet profile + symptoms (in-memory)
 3. Safety Gate (B) → reads red_flags.json, checks for emergency triggers
 4. Confidence Gate (C) → validates required fields, scores confidence
-5. Triage Agent (D) → classifies urgency tier via LLM (rule-based fallback)
+5. Triage Agent (D) → RAG retriever scores complaint against pet_illness_kb.json → top-3 entries injected into LLM system prompt → classifies urgency tier via LLM (rule-based fallback if LLM fails)
 6. Routing Agent (E) → reads clinic_rules.json routing_map, selects service line
 7. Scheduling Agent (F) → reads available_slots.json, proposes slots
 8. Guidance & Summary (G) → assembles owner guidance + clinic JSON summary

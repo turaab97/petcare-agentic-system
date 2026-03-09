@@ -75,8 +75,8 @@
 | **Expected Result** | Emergency escalation. Inability to urinate is a critical red flag (especially male cats). |
 | **Agents Active** | A → B (red flag: can't urinate) → G (emergency guidance) |
 | **Pass Criteria** | Response identifies urinary blockage risk, advises emergency care. |
-| **Result** | ❌ Fail |
-| **Notes** | **Known limitation.** System triaged as Same-day instead of emergency. Safety Gate uses exact substring matching; user phrasing ("straining for hours", "nothing comes out") did not match red flag strings ("straining to urinate with no output", "cannot urinate"). Triage LLM also did not escalate. Recommendation: add broader urinary-related keywords to red_flags.json or add fuzzy matching. |
+| **Result** | ✅ Pass (fixed in v1.1 — RAG pivot, 2026-03-08) |
+| **Notes** | **Fixed by RAG grounding.** In v1.0, system under-triaged as Same-day: Safety Gate exact substring matching didn't match phrasing ("straining for hours", "nothing comes out"), and the Triage LLM had no clinical context for this presentation. In v1.1, `retrieve_illness_context()` retrieves URIN-001 (urinary blockage, Emergency) which explicitly lists "male cat straining with no output" as an urgency escalator. This entry is injected into the Triage LLM system prompt as `=== CLINICAL REFERENCE ===`, grounding the LLM to correctly classify Emergency. |
 
 ---
 
@@ -457,7 +457,7 @@
 | TC-01 | Emergency (respiratory) | ✅ Pass | Safety Gate: breathing fast + pale gums + collapse |
 | TC-02 | Emergency (chocolate) | ✅ Pass | Chocolate flagged despite pet "seeming fine" |
 | TC-03 | Emergency (seizure) | ✅ Pass | Seizure keyword matched |
-| TC-04 | Emergency (urinary) | ❌ Fail | Under-triaged as Same-day; phrasing didn't match red flag strings |
+| TC-04 | Emergency (urinary) | ✅ Pass | Fixed v1.1: RAG retrieves URIN-001; LLM grounded to Emergency classification |
 | TC-05 | Emergency (rat poison) | ✅ Pass | Rat poison keyword matched |
 | TC-06 | Routine (skin) | ✅ Pass | Triage: Soon, slots offered |
 | TC-07 | Same-day (GI) | ✅ Pass | Triage: Same-day |
@@ -490,9 +490,13 @@
 | TC-EX03 | Exotic species — bird (budgie) | ✅ Pass | Pipeline completes; bird accepted as valid species |
 | TC-EX04 | Exotic species — hamster | ✅ Pass | Pipeline completes; hamster accepted as valid species |
 
-**Total: 34 test cases** | **Executed: 22** | **Passed: 21** | **Failed: 1** | **Not tested: 12** (voice/multilingual/Docker require browser)
+| TC-04b | Scope redirect (non-illness general Q&A) | ✅ Pass | Added v1.1: "what should I feed my dog?" → non_illness_scope redirect message |
 
-**Pass Rate (executed): 95.5%** (21/22)
+**Total: 35 test cases** | **Executed: 23** | **Passed: 23** | **Failed: 0** | **Not tested: 12** (voice/multilingual/Docker require browser)
+
+**Pass Rate (executed): 100%** (23/23) — TC-04 fixed by RAG grounding (v1.1); TC-04b added for scope redirect
+
+> **v1.1 Note (2026-03-08):** TC-04 now passes following the clinic-triage pivot. URIN-001 in `pet_illness_kb.json` provides the evidence grounding that the LLM previously lacked. TC-04b is a new test case for the non-illness scope redirect added in the same release.
 
 ---
 
