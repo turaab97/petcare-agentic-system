@@ -513,10 +513,14 @@ For symptom_details.area use only: gastrointestinal, respiratory, dermatological
         species = _sanitize_for_prompt(
             session.get('pet_profile', {}).get('species', 'pet'), max_len=50
         ) or 'pet'
+        # Normalise generic species placeholders ("other", "otro", "autre") to
+        # "pet" so the enrichment LLM doesn't produce "Has your other eaten?"
+        _GENERIC_SP = {'other', 'otro', 'autre', 'andere', 'altro'}
+        species_display = species if species.lower() not in _GENERIC_SP else 'pet'
         pet_name = _sanitize_for_prompt(
             session.get('pet_profile', {}).get('pet_name', ''), max_len=50
         )
-        pet_ref = pet_name or f'your {species}'
+        pet_ref = pet_name or f'your {species_display}'
         complaint = _sanitize_for_prompt(
             session.get('symptoms', {}).get('chief_complaint', ''), max_len=200
         )
@@ -557,7 +561,7 @@ For symptom_details.area use only: gastrointestinal, respiratory, dermatological
 
 The owner has told you their pet's main problem. You need ONE more piece of information to help the vet prepare.
 
-Pet species : {species}
+Pet species : {species_display}
 Pet name    : {pet_name or '(unknown)'}
 Chief complaint : {complaint}
 Context already captured: {known_str}

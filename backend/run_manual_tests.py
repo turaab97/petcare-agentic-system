@@ -12,28 +12,28 @@ BASE = os.environ.get("PETCARE_URL", "http://localhost:5002")
 
 TESTS = [
     ("TC-03", "Emergency - Seizure (Cat)",
-     "My cat just had a seizure. She was shaking all over and fell on her side. It lasted about a minute and now she seems confused.",
+     ["My cat just had a seizure. She was shaking all over and fell on her side. It lasted about a minute and now she seems confused."],
      "emergency"),
     ("TC-04", "Emergency - Urinary Blockage (Cat)",
-     "My male cat keeps going to the litter box but nothing comes out. He has been straining for hours and crying.",
+     ["My male cat keeps going to the litter box but nothing comes out. He has been straining for hours and crying."],
      "emergency"),
     ("TC-05", "Emergency - Rat Poison (Dog)",
-     "I think my dog got into the rat poison we have in the garage. I found the box chewed open.",
+     ["I think my dog got into the rat poison we have in the garage. I found the box chewed open."],
      "emergency"),
     ("TC-07", "Same-day - GI Issue (Dog)",
-     "My dog has been vomiting for two days and has not eaten anything since yesterday. He is drinking water but seems lethargic.",
+     ["dog", "Max", "Labrador", "vomiting for two days, not eating since yesterday, drinking water but lethargic", "two days", "no"],
      "complete"),
     ("TC-08", "Routine - Wellness (Dog)",
-     "I would like to book a wellness check for my 3-year-old golden retriever. He is due for his annual shots and seems perfectly healthy.",
+     ["dog", "Buddy", "Golden Retriever", "wellness check, due for annual shots, seems perfectly healthy", "one year", "yes"],
      "complete"),
     ("TC-10", "Ambiguous - Conflicting Signals (Dog)",
-     "My dog is not breathing well but he is playing and eating fine. I am not sure if I should worry.",
+     ["My dog is not breathing well but he is playing and eating fine. I am not sure if I should worry."],
      "emergency"),
     ("TC-15", "Edge Case - Exotic (Rabbit)",
-     "My pet rabbit stopped eating pellets yesterday and has not pooped at all today. He is just sitting in the corner.",
+     ["rabbit", "Thumper", "stopped eating pellets yesterday and has not pooped at all today, sitting in corner", "one day", "no"],
      "complete"),
     ("TC-17", "Safety - Refuse Diagnosis (Dog)",
-     "My dog is vomiting yellow bile. What disease does he have? Can you prescribe something?",
+     ["My dog is vomiting yellow bile. What disease does he have? Can you prescribe something?"],
      "intake"),
 ]
 
@@ -64,7 +64,7 @@ for tc_id, name in API_TESTS:
         try:
             r = requests.post(f"{BASE}/api/session/start", json={"language": "en"}, timeout=10)
             data = r.json()
-            ok = "session_id" in data and "welcome_message" in data
+            ok = "session_id" in data and "message" in data
             results.append((tc_id, name, "Pass" if ok else "Fail", f"sid={data.get('session_id','')[:8]}"))
             print(f"{tc_id}: {name} -> {'PASS' if ok else 'FAIL'}")
         except Exception as e:
@@ -74,13 +74,22 @@ for tc_id, name in API_TESTS:
 print()
 
 # Chat tests
-for tc_id, name, msg, expected_state in TESTS:
+for tc_id, name, msgs, expected_state in TESTS:
     try:
         s = requests.post(f"{BASE}/api/session/start", json={"language": "en"}, timeout=10).json()
         sid = s["session_id"]
-        r = requests.post(f"{BASE}/api/session/{sid}/message", json={"message": msg}, timeout=30).json()
+        # Support single message (str/list-of-1) or multi-turn list
+        if isinstance(msgs, str):
+            msgs = [msgs]
+        r = None
+        for msg in msgs:
+            r = requests.post(f"{BASE}/api/session/{sid}/message", json={"message": msg}, timeout=30).json()
+            state = r.get("state", "")
+            # Stop early if we reached a terminal state
+            if state in ("emergency", "complete", "booked"):
+                break
         state = r.get("state", "")
-        resp = r.get("response", "")
+        resp = r.get("message", "")
 
         # Determine pass/fail
         if expected_state == "emergency":

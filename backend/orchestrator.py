@@ -922,7 +922,14 @@ class Orchestrator:
                      'مچھلی',                             # Urdu
                      'سمكة',                              # Arabic
                      '鱼'],                               # Chinese
-            'other': ['hedgehog', 'chinchilla', 'rat', 'rats',
+            'other': ['other',                                # EN — explicit "other" selection
+                      'autre',                              # French
+                      'otro', 'otra',                       # Spanish
+                      'अन्य',                                # Hindi
+                      'دوسرا', 'دوسری',                      # Urdu
+                      'أخرى', 'آخر',                        # Arabic
+                      '其他',                                 # Chinese
+                      'hedgehog', 'chinchilla', 'rat', 'rats',
                       'mouse', 'mice', 'ferret', 'ferrets',
                       'frog', 'toad', 'goat', 'sheep', 'pig',
                       'piglet', 'cow', 'calf', 'lamb',
@@ -1022,17 +1029,16 @@ class Orchestrator:
             raw_complaint, species_val
         )
 
-        # If the LLM's complaint fails validation, try the raw user message
-        if not has_complaint and user_message.strip():
-            if self.intake_agent._is_real_complaint(user_message.strip(), species_val):
-                raw_complaint = user_message.strip()
-                intake_out['chief_complaint'] = raw_complaint
-                self.session.setdefault('symptoms', {})['chief_complaint'] = raw_complaint
-                has_complaint = True
-
         # Pet name tracking — carry forward from session or LLM extraction.
         # Also: if the last assistant question asked for the pet's name and the
         # current user reply is a short non-symptom token, treat it as the name.
+        #
+        # IMPORTANT: _name_question_asked is calculated BEFORE the complaint
+        # fallback so we can guard against treating a pet-name reply (e.g.
+        # "Mochi", "hi its Diana") as the chief complaint. Without this guard
+        # the complaint fallback would store the reply as the complaint, and
+        # the enrichment LLM would then use the owner's name (e.g. "Diana")
+        # as if it were the patient's name in its follow-up question.
         _last_asst = ''
         for _m in reversed(self.session.get('messages', [])):
             if _m.get('role') == 'assistant':
@@ -1044,11 +1050,25 @@ class Orchestrator:
                                            "comment s'appelle", "como se llama",
                                            "叫什么名字", "ما اسم", "का नाम", "کا نام"))
         )
+
+        # Complaint fallback: only runs when we did NOT just ask for the pet's
+        # name. If the last question was "what's your cat's name?" and the owner
+        # says "Mochi" or "hi its Diana", we must NOT store that as the complaint.
+        if not has_complaint and user_message.strip() and not _name_question_asked:
+            if self.intake_agent._is_real_complaint(user_message.strip(), species_val):
+                raw_complaint = user_message.strip()
+                intake_out['chief_complaint'] = raw_complaint
+                self.session.setdefault('symptoms', {})['chief_complaint'] = raw_complaint
+                has_complaint = True
+
+        # Context-inferred pet name: when the last question asked for the pet's
+        # name, accept any short non-empty reply (≤3 words, name-like characters)
+        # as the pet name — without the _is_real_complaint guard, which is too
+        # permissive and incorrectly rejects 4+ character pet names like "Mochi".
         if (_name_question_asked
                 and not session_profile.get('pet_name', '')
                 and user_message.strip()
-                and len(user_message.strip().split()) <= 3
-                and not self.intake_agent._is_real_complaint(user_message.strip(), species_val)):
+                and len(user_message.strip().split()) <= 3):
             _candidate = user_message.strip().title()
             if len(_candidate) >= 2 and re.match(r"^[A-Za-zÀ-ÖØ-öø-ÿ\s\-']+$", _candidate):
                 self.session.setdefault('pet_profile', {})['pet_name'] = _candidate
@@ -1122,7 +1142,11 @@ class Orchestrator:
             # Ask for breed (dogs/cats) before clinical enrichment — max 1 ask
             if breed_relevant and not has_breed and breed_asked < 1:
                 self.session['breed_asked'] = breed_asked + 1
-                pet_ref = pet_name_val or f'your {species_val}'
+                _sp_disp2 = (
+                    species_val if species_val and species_val.lower() not in _GENERIC_SPECIES
+                    else 'pet'
+                )
+                pet_ref = pet_name_val or f'your {_sp_disp2}'
                 _breed_qs = {
                     'en': f"What breed is {pet_ref}?",
                     'fr': f"Quelle est la race de {pet_ref} ?",
@@ -1150,22 +1174,97 @@ class Orchestrator:
             # Enrichment complete or skipped — proceed to safety gate
             self.session['enrichment_count'] = 0
         elif has_species and has_complaint and not has_pet_name:
-            # Ask for pet name (max 2 times before giving up)
+            # Early Safety Gate pre-check: if red flags are present, skip pet
+            # name collection entirely and route to emergency immediately.
+            _early_safety = self.safety_gate.process(intake_out)
+            if _early_safety['output']['red_flag_detected']:
+                self.session['state'] = SessionState.EMERGENCY
+                agents_executed.append('safety_gate')
+                self.session['agent_outputs']['safety_gate'] = _early_safety
+                logger.warning(
+                    f"RED FLAG (early check) in session {self.session['id']}: "
+                    f"{_early_safety['output']['red_flags']}"
+                )
+                _emergency_msgs = {
+                    'en': "⚠️ EMERGENCY DETECTED: Based on the symptoms you've described, this may be a life-threatening emergency. Please take your pet to the nearest emergency veterinary clinic IMMEDIATELY. Do not wait for a regular appointment.\n\nIf you're unsure where the nearest emergency clinic is, call your regular vet's office — their voicemail often has emergency clinic information.",
+                    'fr': "⚠️ URGENCE DÉTECTÉE : D'après les symptômes que vous avez décrits, il pourrait s'agir d'une urgence vitale. Veuillez emmener votre animal à la clinique vétérinaire d'urgence la plus proche IMMÉDIATEMENT. N'attendez pas un rendez-vous régulier.\n\nSi vous ne savez pas où se trouve la clinique d'urgence la plus proche, appelez votre vétérinaire habituel.",
+                    'es': "⚠️ EMERGENCIA DETECTADA: Según los síntomas que ha descrito, esto podría ser una emergencia potencialmente mortal. Lleve a su mascota a la clínica veterinaria de emergencia más cercana INMEDIATAMENTE. No espere una cita regular.\n\nSi no sabe dónde está la clínica de emergencia más cercana, llame a su veterinario habitual.",
+                    'zh': "⚠️ 检测到紧急情况：根据您描述的症状，这可能是危及生命的紧急情况。请立即将您的宠物带到最近的紧急兽医诊所。不要等待普通预约。\n\n如果您不确定最近的紧急诊所在哪里，请致电您的普通兽医诊所。",
+                    'ar': "⚠️ تم اكتشاف حالة طوارئ: بناءً على الأعراض التي وصفتها، قد تكون هذه حالة طوارئ تهدد الحياة. يرجى اصطحاب حيوانك الأليف إلى أقرب عيادة بيطرية طوارئ فوراً. لا تنتظر موعداً عادياً.\n\nإذا لم تكن متأكداً من مكان أقرب عيادة طوارئ، اتصل بعيادة الطبيح البيطري المعتاد.",
+                    'hi': "⚠️ आपातकाल का पता चला: आपके द्वारा बताए गए लक्षणों के आधार पर, यह जीवन के लिए खतरनाक आपातकाल हो सकता है। कृपया अपने पालतू जानवर को तुरंत निकटतम आपातकालीन पशु चिकित्सा क्लिनिक में ले जाएँ।\n\nयदि आप निकटतम आपातकालीन क्लिनिक के बारे में अनिश्चित हैं, तो अपने नियमित पशु चिकित्सक को कॉल करें।",
+                    'ur': "⚠️ ایمرجنسی کا پتہ چلا: آپ کی بیان کردہ علامات کی بنیاد پر، یہ جان لیوا ایمرجنسی ہو سکتی ہے۔ براہ کرم اپنے پالتو جانور کو فوری طور پر قریب ترین ایمرجنسی ویٹرنری کلینک لے جائیں۔\n\nاگر آپ کو قریب ترین ایمرجنسی کلینک کا پتہ نہیں ہے تو اپنے عام ویٹرنری ڈاکٹر کو کال کریں۔",
+                }
+                _lang = self.session.get('language', 'en')
+                return self._build_response(
+                    message=_emergency_msgs.get(_lang, _emergency_msgs['en']),
+                    state='emergency',
+                    agents=agents_executed,
+                    extra={'emergency': True,
+                           'red_flags': _early_safety['output']['red_flags']}
+                )
+
+            # No red flag — ask for pet name (max 2 times before giving up)
             self.session['pet_name_asked'] = pet_name_asked + 1
+            # Use generic fallback for non-specific species words like "other",
+            # "otro", "autre" — these produce unnatural phrasing like
+            # "what's your other's name?" which confuses owners.
+            _GENERIC_SPECIES = {'other', 'otro', 'autre', 'andere', 'altro', 'その他'}
+            _sp_display = (
+                species_val if species_val and species_val.lower() not in _GENERIC_SPECIES
+                else ''
+            )
             _name_qs = {
-                'en': f"One more thing — what's your {species_val or 'pet'}'s name?",
-                'fr': f"Une dernière chose — comment s'appelle votre {species_val or 'animal'} ?",
-                'es': f"Una cosa más — ¿cómo se llama su {species_val or 'mascota'}?",
-                'zh': f"还有一件事——您的{species_val or '宠物'}叫什么名字？",
-                'ar': f"شيء أخير — ما اسم {species_val or 'حيوانك الأليف'}؟",
-                'hi': f"एक और बात — आपके {species_val or 'पालतू जानवर'} का नाम क्या है?",
-                'ur': f"ایک اور بات — آپ کے {species_val or 'پالتو جانور'} کا نام کیا ہے؟",
+                'en': f"One more thing — what's your {_sp_display or 'pet'}'s name?",
+                'fr': f"Une dernière chose — comment s'appelle votre {_sp_display or 'animal'} ?",
+                'es': f"Una cosa más — ¿cómo se llama su {_sp_display or 'mascota'}?",
+                'zh': f"还有一件事——您的{_sp_display or '宠物'}叫什么名字？",
+                'ar': f"شيء أخير — ما اسم {_sp_display or 'حيوانك الأليف'}؟",
+                'hi': f"एक और बात — आपके {_sp_display or 'पालतू जानवर'} का नाम क्या है?",
+                'ur': f"ایک اور بات — آپ کے {_sp_display or 'پالتو جانور'} کا نام کیا ہے؟",
             }
             name_q = _name_qs.get(self.session.get('language', 'en'), _name_qs['en'])
             return self._build_response(message=name_q, state='intake', agents=agents_executed)
         else:
             self.session['clarification_count'] = clarification_count + 1
             follow_ups = intake_out.get('follow_up_questions', [])
+
+            # Guard: if Pass 1 already detected a species but the intake LLM's
+            # follow-up is still asking "what type of pet do you have?", the LLM
+            # didn't recognise the species answer (e.g. "other" as a keyword).
+            # Override the follow-up with a pet-name question so the conversation
+            # moves forward rather than re-asking for the species.
+            _SPECIES_ASKS = ('what type of pet', 'what kind of pet', 'quel type d\'animal',
+                             'qué tipo de mascota', '什么类型', 'ما نوع', 'किस प्रकार', 'کس قسم')
+            if (has_species and follow_ups
+                    and any(p in follow_ups[0].lower() for p in _SPECIES_ASKS)):
+                # Species is known — skip to pet-name question instead
+                pet_name_asked_now = self.session.get('pet_name_asked', 0)
+                has_pet_name_now = bool(
+                    session_profile.get('pet_name', '')
+                    or intake_out.get('pet_profile', {}).get('pet_name', '')
+                )
+                if not has_pet_name_now and pet_name_asked_now < 2:
+                    _GENERIC_SPECIES_FUP = {'other', 'otro', 'autre', 'andere', 'altro'}
+                    _sp_fup = (
+                        species_val if species_val and species_val.lower() not in _GENERIC_SPECIES_FUP
+                        else ''
+                    )
+                    _lang_now = self.session.get('language', 'en')
+                    _override_qs = {
+                        'en': f"Thanks! What's your {_sp_fup or 'pet'}'s name?",
+                        'fr': f"Merci ! Comment s'appelle votre {_sp_fup or 'animal'} ?",
+                        'es': f"¡Gracias! ¿Cómo se llama su {_sp_fup or 'mascota'}?",
+                        'zh': f"谢谢！您的{_sp_fup or '宠物'}叫什么名字？",
+                        'ar': f"شكراً! ما اسم {_sp_fup or 'حيوانك الأليف'}؟",
+                        'hi': f"धन्यवाद! आपके {_sp_fup or 'पालतू जानवर'} का नाम क्या है?",
+                        'ur': f"شکریہ! آپ کے {_sp_fup or 'پالتو جانور'} کا نام کیا ہے؟",
+                    }
+                    self.session['pet_name_asked'] = pet_name_asked_now + 1
+                    return self._build_response(
+                        message=_override_qs.get(_lang_now, _override_qs['en']),
+                        state='intake', agents=agents_executed
+                    )
+
             if follow_ups:
                 q = follow_ups[0]
                 if isinstance(q, dict):
