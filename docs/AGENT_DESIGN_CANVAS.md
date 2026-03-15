@@ -582,6 +582,73 @@ All 23 existing test cases remain valid. Expected changes:
 
 ---
 
+---
+
+## STEP 11: Multilingual Live Testing & Regression Fixes (March 2026)
+
+### Multilingual Testing Status
+
+| Language | Implemented | Live Tested | Notes |
+|----------|-------------|-------------|-------|
+| English (EN) | ✅ | ✅ | 23/23 manual test cases; 6/6 automated eval |
+| Chinese (ZH) | ✅ | ✅ | 3 regressions found and fixed (ZH-1, ZH-2, ZH-3) |
+| French (FR) | ✅ | Pending | Test cases defined in `testcases.md` |
+| Spanish (ES) | ✅ | Pending | Test cases defined in `testcases.md` |
+| Arabic (AR) | ✅ | Pending | RTL layout verified; test cases defined |
+| Hindi (HI) | ✅ | Pending | Test cases defined in `testcases.md` |
+| Urdu (UR) | ✅ | Pending | RTL layout verified; test cases defined |
+
+### Chinese Live Testing — Regression Findings (Diana Liu, March 2026)
+
+Live end-to-end testing in Chinese revealed five regressions (2 English, 3 Chinese). All five were fixed in v1.2. The Chinese regressions are documented below.
+
+#### ZH-1: Mixed-Language Pet Name Not Extracted
+
+| | Detail |
+|--|--------|
+| **Observed** | User typed `他叫Milky，是拉布拉多` (His name is Milky, he's a Labrador). System did not extract "Milky" as the pet name — re-asked for name. |
+| **Root cause** | Name extraction regex `^[A-Za-zÀ-ÖØ-öø-ÿ\s\-']+$` required the full input to be Latin-only. Mixed Chinese+English strings failed the match. |
+| **Fix** | Fallback regex `\b([A-Z][a-z]{1,20})\b` scans for a capitalized English word inside the string when the full string fails the Latin-only check. Applied in orchestrator.py context-infer block. |
+| **Result** | "Milky" correctly extracted from mixed-language input. |
+
+#### ZH-2: Enrichment Question Asked Before Real Complaint
+
+| | Detail |
+|--|--------|
+| **Observed** | When user typed a short ambiguous opener in Chinese (e.g., `我的狗不舒服` — "My dog is uncomfortable"), system immediately asked enrichment question ("When did this start?") before a substantive complaint was established. |
+| **Root cause** | Enrichment block only checked `has_complaint` (a boolean from the intake state), not whether the stored `chief_complaint` value was a real health concern. |
+| **Fix** | Pre-guard added: `_is_real_complaint(stored_complaint, species)` re-evaluated before entering enrichment block. If false, `has_complaint` reset to `False`, intake continues normally. |
+| **Result** | Enrichment questions now only fire when a real symptom complaint is captured. |
+
+#### ZH-3: Urgency Labels and Appointment Times Displayed in English
+
+| | Detail |
+|--|--------|
+| **Observed** | In Chinese sessions, urgency tier displayed as "Same-day" (English) and appointment slots showed "Tuesday, March 17 at 2:00 pm" (English strftime format). |
+| **Root cause** | Urgency tier was output directly from the LLM's `urgency_tier` JSON field (always English). Appointment datetime used `dt.strftime('%A, %B %d at %I:%M %p')` which always renders in English locale. |
+| **Fix 1** | `_URGENCY_TIER_LABELS` dict added to orchestrator.py — maps all 4 tiers × all 7 languages. Lookup: `_URGENCY_TIER_LABELS[urgency_raw][lang]`. |
+| **Fix 2** | `_fmt_slot_dt(dt, lang)` helper added — uses `_MONTH_NAMES` and `_DAY_NAMES_DISPLAY` dicts (7 languages each) to build a localized datetime string. Replaces all 4 `strftime` call sites in `_handle_post_completion`. |
+| **Result** | Chinese sessions show `当天就诊`, `紧急`, `常规` and `星期二, 3月 17 14:00` format. |
+
+### English Regressions Fixed in Same Cycle
+
+Two English regressions were also found during live testing and fixed in v1.2:
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| EN-1 | Pipeline crash left corrupted session state; user had to retype message | Session rollback in `api_server.py` + input restore in `app.js` |
+| EN-2 | Enrichment loop asked the same follow-up question twice | `_pending_enrichment_field` deterministic capture in orchestrator.py — stores the asked field; answer captured directly next turn without LLM re-extraction |
+
+### v1.2 Test Coverage Summary
+
+| Version | Test Cases | Status |
+|---------|-----------|--------|
+| v1.0 | 23 | 22/23 (TC-04 known fail) |
+| v1.1 | 23 | 23/23 (RAG fixed TC-04) |
+| v1.2 | 46 (23 original + 23 Diana regression/multilingual) | 46/46 |
+
+---
+
 ## Reference: Key Repo Documents
 
 | Document | Purpose |

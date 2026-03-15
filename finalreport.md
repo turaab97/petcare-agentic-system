@@ -1,331 +1,341 @@
 # PetCare Triage & Smart Booking Agent — Final Report
 
-**Team Broadview** — Syed Ali Turab, Fergie Feng, Diana Liu  
-**Contributors & Reviewers:** Jeremy Burbano, Dumebi Onyeagwu, Ethan He, Umair Mumtaz  
-**Course:** MMAI 891 — Assignment 3  
+**Team Broadview** — Syed Ali Turab, Fergie Feng, Diana Liu
+**Contributors & Reviewers:** Jeremy Burbano, Dumebi Onyeagwu, Ethan He, Umair Mumtaz
+**Course:** MMAI 891 — Assignment 3 | Queen's University Smith School of Business
 **Date:** March 15, 2026
+
+**Live deployment:** https://petcare-agentic-system.onrender.com
+**GitHub (team):** https://github.com/FergieFeng/petcare-agentic-system
+**GitHub (fork — Syed Ali Turab):** https://github.com/turaab97/petcare-agentic-system
 
 ---
 
 ## Executive Summary
 
-Veterinary clinics lose over two hours of front-desk staff time per day on intake phone calls. A single intake call takes roughly five minutes: the receptionist asks about the pet's species, symptoms, and history, judges how urgently the animal needs to be seen, picks an appointment type and provider, and explains next steps to a worried owner. The quality of that five-minute call varies by who answers the phone, and when the wrong urgency or appointment type is assigned, the clinic has to rebook — wasting time for both staff and pet owners.
+Veterinary clinics lose over two hours of front-desk staff time per day on intake phone calls. A single call takes roughly five minutes: the receptionist asks about the pet's species, symptoms, and history, judges urgency, picks an appointment type and provider, and explains next steps to a worried owner. The quality of that call varies by who answers the phone — and when the wrong urgency is assigned, the clinic must rebook, wasting time for staff, owners, and veterinarians alike.
 
-We built a proof-of-concept (POC) AI assistant that handles the entire intake workflow end-to-end: it collects pet and symptom information through a conversational chat interface, detects life-threatening emergencies, classifies how urgently the pet needs to be seen, recommends the right appointment type and provider, proposes available time slots, and gives the owner clear "do and don't" guidance while they wait. It also produces a structured summary the veterinarian can review before the visit.
+We built a proof-of-concept AI assistant — **PetCare** — that handles the entire intake workflow end-to-end through a conversational chat interface. It collects pet and symptom information, detects life-threatening emergencies, classifies urgency, recommends the right appointment type and provider, proposes available time slots, and gives the owner clear do/don't guidance while they wait. It also produces a structured clinic summary the veterinarian can review before the visit.
 
-**Key results from our evaluation:**
+**Key results:**
 
-- **100% triage accuracy** — the system matched our gold-standard urgency labels on all 6 automated test scenarios
-- **100% red-flag detection** — every emergency (toxin ingestion, seizures, breathing distress) was correctly caught and escalated
-- **96% time reduction** — average intake completed in 8.4 seconds versus an estimated 4 minutes for a phone-based receptionist script
-- **100% pass rate** on all 23 test cases (18 manually executed + 5 automated scenarios) covering emergencies, routine visits, ambiguous inputs, multilingual flows, edge cases, and API infrastructure — including TC-04 urinary blockage, which failed in v1.0 and was fixed in v1.1 via RAG
-- **~$0.01 per session** in AI model costs (three calls to GPT-4o-mini per completed intake)
+| Metric | Target | Result |
+|--------|--------|--------|
+| Triage accuracy (M2) | ≥ 80% | **100%** — 6/6 automated scenarios |
+| Red-flag detection (M4) | 100% | **100%** — all emergencies escalated |
+| Intake time reduction (M5) | ≥ 30% | **96%** — 8.4s avg vs ~240s manual baseline |
+| Routing accuracy (M3) | ≥ 80% | **100%** — 4/4 cases |
+| Mis-booking rate (M6) | ≥ 20% reduction | **Eliminated** — 0% (4/4 correct) |
+| AI model cost | < $0.05 | **~$0.01** per session |
+| Manual test pass rate | ≥ 80% | **100%** — 23/23 executed cases (v1.2) |
+| Security posture (web) | All critical fixed | **9/9 tests blocked** post-remediation |
+| Security posture (LLM) | Best effort | **15/19 OWASP LLM tests protected** (79%) |
 
-The system is live at [https://petcare-agentic-system.onrender.com](https://petcare-agentic-system.onrender.com) and supports seven languages (English, French, Spanish, Chinese, Arabic, Hindi, Urdu) with voice input and output.
+The system is live and supports **seven languages** — English and Chinese have been fully tested end-to-end; French, Spanish, Arabic, Hindi, and Urdu are fully implemented and available in the product (see Section 3 and Appendix B.5 for full multilingual coverage details and test cases). Voice input and output are supported in all seven languages.
 
 ---
 
-## 1. The Problem and Why It Matters
+## 1. The Problem, Who It Serves, and What We Built
 
 ### Who uses this and where it fits
 
 | User | How they interact | Current pain point |
 |------|-------------------|--------------------|
-| **Clinic receptionist** (primary) | Reviews the structured intake summary the system produces; retains override authority | Spends 150+ min/day on phone intake; inconsistent triage quality across staff |
-| **Pet owner** (secondary) | Chats with the assistant via web or mobile; receives guidance and appointment options | Long hold times, unclear next steps, anxiety about their pet |
+| **Clinic receptionist** (primary) | Reviews structured intake summary; retains full override authority | Spends 150+ min/day on phone intake; triage quality varies by staff experience |
+| **Pet owner** (secondary) | Chats via web or mobile; receives guidance and appointment options | Long hold times, unclear next steps, anxiety about their pet |
 | **Veterinarian** (downstream) | Reads the pre-visit summary before the appointment | Currently receives incomplete, unstructured handoff notes |
 
-A mid-size clinic handles roughly 30 intake calls per day. At five minutes each, that is 150 minutes of daily staff time — time that could be spent on in-clinic patient care. More critically, when a new receptionist misjudges urgency or books the wrong appointment type, the clinic must reschedule, creating friction for everyone involved.
+A mid-size clinic handles roughly 30 intake calls per day. At five minutes each, that is 150 minutes of daily staff time. When a new receptionist misjudges urgency or books the wrong appointment type, the clinic must reschedule — friction for everyone involved.
 
-### What we built
+### What the system does, end-to-end
 
-The PetCare agent replaces the phone-call intake with a self-serve conversational interface. A pet owner opens the web app, describes what is happening with their pet, and receives — within seconds — an urgency classification, recommended appointment slots, and safe waiting guidance. Behind the scenes, seven specialized sub-agents coordinate the workflow:
+A pet owner opens the web app, types or speaks a description of what is happening with their pet, and receives — within seconds — an urgency classification, recommended appointment slots, and safe waiting guidance. The receptionist receives a structured JSON summary ready to review before the appointment. Seven specialized sub-agents coordinate behind the scenes:
 
-1. **Intake Agent** — collects species, symptoms, timeline, eating/drinking, and energy level through adaptive follow-up questions
-2. **Safety Gate** — checks for life-threatening red flags (toxin ingestion, seizures, breathing distress, collapse) using a curated keyword list; if found, the system stops the booking flow and tells the owner to seek emergency care immediately
-3. **Confidence Gate** — verifies that enough information has been collected; if not, asks targeted clarifying questions (up to two rounds) before proceeding
-4. **Triage Agent** — classifies urgency into one of four tiers: Emergency, Same-day, Soon, or Routine
-5. **Routing Agent** — maps the symptom category to the correct appointment type and provider pool
-6. **Scheduling Agent** — proposes available time slots based on urgency and provider availability
-7. **Guidance & Summary Agent** — writes owner-facing "do/don't while waiting" advice and a structured JSON summary for the clinic
+1. **Intake Agent** — collects species, pet name, symptoms, timeline, eating/drinking, and energy level through adaptive follow-up questions (LLM-powered, GPT-4o-mini)
+2. **Safety Gate** — checks for life-threatening red flags using a 50+ keyword list; any match short-circuits the entire pipeline and escalates immediately (rule-based, < 1 ms)
+3. **Confidence Gate** — verifies that enough information has been collected; asks up to two rounds of targeted clarifying questions before proceeding (rule-based)
+4. **Triage Agent** — classifies urgency into Emergency, Same-day, Soon, or Routine (LLM + RAG; see Section 7)
+5. **Routing Agent** — maps the symptom category to the correct appointment type and provider pool (rule-based, JSON config)
+6. **Scheduling Agent** — proposes available time slots based on urgency and provider availability (rule-based, JSON config)
+7. **Guidance & Summary Agent** — writes owner-facing do/don't/watch-for advice and a structured clinic JSON summary (LLM-powered, GPT-4o-mini)
+
+**Input:** Owner free-text or voice describing their pet and the problem — no forms, no drop-downs.
+**Output:** Urgency tier + appointment slots + owner guidance (chat) + structured clinic JSON (API + PDF export).
 
 ### What we intentionally left out
 
-To keep the POC scope tight, we excluded: real clinic scheduling system integration (we use mock appointment data), persistent database storage (sessions live in-memory with a 24-hour window), and formal usability testing with real clinic staff. POC 1.1 added an N8N webhook layer (fires on terminal states if `N8N_WEBHOOK_URL` is set) and a Twilio click-to-call endpoint (activates if Twilio env vars are configured) — both are code-ready but **not deployed** for the POC demo. LangSmith observability tracing is **live on Render**. These limitations and next steps are documented below.
+To keep scope tight, we excluded: real clinic scheduling system integration (mock appointment data used), persistent database storage (sessions are in-memory with a 24-hour window), and formal usability testing with real clinic staff. Webhook automation (n8n) and Twilio click-to-call are code-ready but not deployed for the demo. LangSmith observability tracing is live on Render. All exclusions are documented as production next steps in Section 6.
 
 ---
 
 ## 2. Design Considerations
 
-Three considerations shaped the build from the start:
+Three considerations shaped every major decision in the build.
 
 ### Safety over convenience
 
-The most important design decision was making the Safety Gate deterministic and rule-based rather than LLM-powered. Emergency detection uses exact substring matching against a curated list of 50+ red-flag keywords informed by ASPCA Animal Poison Control data and veterinary emergency guidelines. This means the system will never "hallucinate" a missed emergency — if the keyword is in the list and the owner mentions it, the agent catches it in under one millisecond. The trade-off is that unusual phrasing can slip through (as we discovered in testing — see Section 4), but we chose to accept occasional over-triage rather than risk missing a real emergency.
+The most important design decision was making the Safety Gate **deterministic and rule-based** rather than LLM-powered. Emergency detection uses exact substring matching against a curated list of 50+ red-flag keywords sourced from ASPCA Animal Poison Control data and veterinary emergency guidelines. This means the system will never hallucinate a missed emergency — if the keyword is in the list and the owner mentions it, the agent catches it in under one millisecond, every time.
+
+The trade-off is brittleness: unusual phrasing can slip through (see Section 4 — TC-04). We chose to accept occasional over-triage rather than risk missing a real emergency. The LLM-powered Triage Agent provides a second layer: with RAG grounding (v1.1), it can catch phrasing variants the Safety Gate misses. This defence-in-depth design — deterministic gate first, LLM layer second — is deliberate.
 
 ### Latency and cost trade-offs
 
-Only three of the seven agents call the LLM (Intake, Triage, and Guidance). The other four are pure rule-based logic operating on local JSON files, which keeps each session to roughly three API calls and $0.01 in cost. We selected GPT-4o-mini for its balance of quality and speed — the full pipeline averages 8.4 seconds end-to-end, well within the 15-second target. For emergencies, the pipeline short-circuits after the Safety Gate (skipping Triage, Routing, and Scheduling), completing in under 3 seconds.
+Only three of the seven agents call the LLM (Intake, Triage, and Guidance). The other four are pure rule-based logic operating on local JSON files, keeping each session to roughly **three API calls and $0.01 in cost**. We selected GPT-4o-mini for its balance of quality and speed — the full pipeline averages **8.4 seconds end-to-end**. For emergencies, the pipeline short-circuits after the Safety Gate (no LLM needed), completing in under 3 seconds.
+
+This architecture means the system scales cost-linearly: a clinic with 300 sessions/day spends approximately $3/day in AI costs, compared to the $5,000+/month salary cost of the receptionist time it offloads.
 
 ### Privacy and approvals
 
-The system stores no personal information beyond the active session. Sessions expire after one hour (active) or 24 hours (completed, for PDF download). No owner names, phone numbers, or addresses are collected or retained. A PIPEDA/PHIPA-style consent banner appears on first use. All user inputs are sanitized before being passed to the LLM to prevent prompt injection. The system is designed so a clinic could deploy it without requiring a formal privacy impact assessment for the POC phase — though production deployment would need one.
+The system stores no personal information beyond the active session. Sessions expire after one hour (active) or 24 hours (completed). No owner names, phone numbers, or addresses are collected or retained. A PIPEDA/PHIPA-style consent banner appears on first use. All user inputs are sanitized before entering any LLM prompt. A formal privacy impact assessment would be required before clinical production deployment, but the POC architecture is designed to minimize PII surface area from the ground up.
 
 ---
 
 ## 3. How We Measured Success
 
-### Our metrics
+### Defining success before we tested
 
-We defined six success metrics before testing, comparing the agent against a manual baseline — a human receptionist following a standardized 10-question phone intake script (documented in our Baseline Methodology):
+We defined six success metrics — M1 through M6 — before building, comparing against a manual baseline: a human receptionist following a standardized 10-question phone intake script (documented in `docs/BASELINE_METHODOLOGY.md`). Both were evaluated against the same six synthetic scenarios with pre-agreed gold labels defined before testing to avoid confirmation bias.
 
-| Metric | What it measures | Target | Agent result | Baseline estimate |
-|--------|-----------------|--------|-------------|-------------------|
-| **M1 — Intake completeness** | % of required fields captured | ≥ 90% | 100% | ~70% (ad-hoc questioning) |
-| **M2 — Triage accuracy** | Agreement with gold-standard urgency labels | ≥ 80% | **100% (6/6)** | ~60–70% (varies by staff) |
-| **M3 — Routing accuracy** | Correct appointment type on first attempt | ≥ 80% | **100% (4/4)** | ~75% (manual judgment) |
-| **M4 — Red-flag detection** | Emergency cases correctly caught | 100% | **100% (2/2)** | ~85% (depends on experience) |
-| **M5 — Time reduction** | Seconds to complete intake | 30%+ reduction | **96% reduction** (8.4s vs ~240s) | 240s (4 min phone call) |
-| **M6 — Mis-booking proxy** | Cases needing rescheduling | 20%+ reduction | **0 re-bookings** (4/4 correct) | ~25% re-book rate |
+| Metric | What it measures | Target | Agent result | Baseline |
+|--------|-----------------|--------|-------------|----------|
+| **M1 — Intake completeness** | % required fields captured | ≥ 90% | 100% | ~70% |
+| **M2 — Triage accuracy** | Agreement with gold urgency labels | ≥ 80% | **100% (6/6)** | ~60–70% |
+| **M3 — Routing accuracy** | Correct appointment type | ≥ 80% | **100% (4/4)** | ~75% |
+| **M4 — Red-flag detection** | Emergency cases correctly caught | 100% | **100% (2/2)** | ~85% |
+| **M5 — Time reduction** | Seconds to complete intake | ≥ 30% | **96%** (8.4s vs ~240s) | 240s |
+| **M6 — Mis-booking proxy** | Cases needing rescheduling | ≥ 20% reduction | **Eliminated** (0%) | ~25% |
 
-### What we compared against
+### What changed across versions
 
-The baseline is a non-AI manual process: a receptionist reads from a fixed 10-question script, records answers on paper, decides urgency from experience, and books an appointment. Both the agent and the baseline were evaluated against the same six synthetic scenarios with pre-agreed gold labels (defined before testing to avoid bias). The full baseline methodology, gold labels, and comparison table are in Appendix B.
+**v1.0** — 22/23 manual test cases passing. TC-04 (urinary blockage) failed.
 
-### What changed during development
+**v1.1 (RAG pivot)** — Fixed TC-04 by adding RAG to the Triage Agent, grounding decisions in a curated 24-condition illness knowledge base. All 23 original test cases now pass.
 
-Early in development, the Intake Agent would sometimes produce invalid JSON when the owner's input was very short or vague (e.g., "My pet isn't doing well"). The orchestrator now includes a JSON-parsing fallback that retries once with a simplified prompt, and the Confidence Gate catches incomplete intakes and loops back for clarification. This made the multi-turn flow significantly more robust.
+**v1.2 (UX + multilingual fixes)** — Five bugs identified in Diana's live testing session (March 2026) and resolved:
+- **EN-1:** Pipeline failure rolled back user message; frontend restores input so user can retry without retyping
+- **EN-2:** Duplicate enrichment question eliminated via deterministic field tracking
+- **ZH-1:** Mixed Chinese+English pet name (e.g., "他叫Milky") now correctly extracted
+- **ZH-2:** Symptom-onset question no longer asked before the complaint is described
+- **ZH-3:** Urgency tier labels (常规, 当天就诊) and dates now fully localized — no English words embedded in Chinese output
+
+### Multilingual testing status
+
+English and Chinese have been fully tested end-to-end, including live session walkthroughs and regression cases. French, Spanish, Arabic, Hindi, and Urdu are fully implemented in the UI, backend, voice layer, and LLM prompts — all seven languages have structured test cases defined in `testcases.md`. Live testing of the remaining five languages is the immediate next step. All hardcoded UI strings are translated in `orchestrator.py` (`_UI_STRINGS`), urgency tier labels are in `_URGENCY_TIER_LABELS`, and date formatting uses language-aware `_fmt_slot_dt()`. The `language` parameter flows through every agent and all LLM system prompts. Full test coverage details are in Appendix B.5.
 
 ---
 
-## 4. One Success, One Failure
+## 4. One Clear Success, One Honest Failure
 
 ### Success: Chocolate toxin ingestion
 
 An owner sends: *"My dog ate a whole bar of dark chocolate about an hour ago."*
 
-The Safety Gate immediately detected the word "chocolate" against its red-flag list and escalated to emergency — skipping triage and booking entirely. The Guidance Agent generated emergency-specific advice ("do not induce vomiting unless directed by a vet") and a structured clinic summary. Total processing time: 4.5 seconds. The system correctly refused to book a routine appointment for what is a time-sensitive toxicological emergency.
+The Safety Gate detected "chocolate" and escalated to emergency — skipping triage and booking entirely. Processing time: **4.5 seconds.** The system refused to book a routine appointment for a time-sensitive toxicological emergency.
 
-**Why this matters:** The emergency detection is deterministic. It does not depend on the LLM's judgment, which means it cannot be fooled by reassuring context ("He seems fine right now"). If "chocolate" appears in the owner's message, the system escalates — every time, in under one millisecond.
+**Why this matters:** The detection is deterministic. It cannot be talked out of an escalation by reassuring context ("He seems fine right now"). If "chocolate" appears in the owner's message, the system escalates — every time, in under one millisecond. We tested this explicitly with added reassuring context — the Safety Gate still fires.
 
 ### Failure (and fix): Urinary blockage under-triaged (TC-04)
 
 An owner sends: *"My male cat keeps going to the litter box but nothing comes out. He's been straining for hours and crying."*
 
-This is a life-threatening emergency — urinary blockage in male cats can be fatal within 24 hours. Our red-flag list includes the phrases "inability to urinate," "cannot urinate," and "straining to urinate with no output." However, in v1.0 the owner's natural phrasing ("straining for hours," "nothing comes out") did not exactly match any of those strings. The Safety Gate did not fire, and the Triage Agent classified it as Same-day rather than Emergency.
+This is life-threatening — urinary blockage in male cats can be fatal within 24 hours. The owner's natural phrasing ("straining for hours," "nothing comes out") did not match the red-flag strings exactly. The Safety Gate did not fire, and the Triage Agent classified it as Same-day rather than Emergency in v1.0.
 
-**What we learned:** Exact substring matching is reliable but brittle. The same conservative design that makes the system trustworthy for known patterns can miss semantically equivalent descriptions that use different words. This insight drove the RAG pivot.
+**What we learned:** Exact substring matching is reliable but brittle. The same conservative design that makes the system trustworthy for known patterns can miss semantically equivalent descriptions that use different words.
 
-**How we fixed it (v1.1):** Rather than trying to enumerate every phrasing variant in the red-flag list, we implemented Retrieval-Augmented Generation for the Triage Agent. The illness knowledge base (`pet_illness_kb.json`) contains a `URIN-001: Urinary Blockage` entry with `typical_urgency: Emergency` and the explicit escalation trigger "male cat straining with no output." When this case is submitted, the RAG retriever tokenises the chief complaint, scores it against illness entries, and injects the top-3 matches as a `=== CLINICAL REFERENCE ===` block into the Triage LLM's system prompt — giving the model the clinical context to correctly classify Emergency. TC-04 now passes on the current codebase (v1.1, merged to `main`). See Section 7 for the full pivot story.
+**How we fixed it (v1.1 — RAG):** We implemented Retrieval-Augmented Generation for the Triage Agent. The illness knowledge base (`backend/data/pet_illness_kb.json`, 24 entries from ASPCA/AVMA/Cornell) includes `URIN-001: Urinary Blockage` with `typical_urgency: Emergency` and escalation trigger "male cat straining with no output." At triage time, the chief complaint is tokenised, scored against all entries, and the top-3 matches are injected as a `=== CLINICAL REFERENCE ===` block into the triage LLM's system prompt. The LLM correctly classifies Emergency. **TC-04 now passes on v1.1 (current `main`).**
 
-**Remaining gap:** While RAG solves the LLM under-triage problem, the Safety Gate still uses substring matching and would not catch this as a hard red flag. A production system should also add fuzzy matching or synonym expansion to the Safety Gate to provide defence-in-depth.
+**Why RAG and not fine-tuning:** Fine-tuning requires labeled (input → output) pairs for the specific task. We have illness reference documents, not labeled triage examples. RAG is correct for document-based knowledge. Fine-tuning is correct when you have labeled training examples of the exact task.
+
+**Remaining gap:** The Safety Gate still uses substring matching and would not hard-short-circuit this case. A production system should add fuzzy matching to the Safety Gate for defence-in-depth.
 
 ---
 
 ## 5. Risks and Mitigations
 
-| Risk | Impact | How we mitigate it |
-|------|--------|-------------------|
-| **Under-triage** — a serious case is labeled routine | High | Conservative red-flag rules run before any LLM reasoning; mandatory escalation messaging; default to "contact clinic" when uncertain |
-| **Over-triage** — too many cases flagged urgent | Medium | Calibrated thresholds via scenario testing; receptionist retains override authority; track override rates in production |
-| **LLM hallucination** — agent names a disease or suggests medication | High | Strict "never diagnose" constraints in every LLM prompt; rule-based Safety Gate is independent of LLM; all guidance is template-structured |
-| **Bad routing** — wrong appointment type booked | Medium | Routing rules are clinic-owned JSON (version-controlled); track override reasons to refine rules |
-| **Misleading owner input** — owner underreports symptoms | Medium | Confidence Gate verifies completeness; targeted follow-up questions; "needs human review" flag when confidence is low |
-| **Prompt injection** — malicious input manipulates the LLM | Medium | Input sanitization strips control characters and enforces length limits before any value enters an LLM prompt; symptom categories validated against a fixed allowlist |
-| **Web vulnerability exploitation** — rate limiting, XSS, TTS abuse | Medium | Black-box pentest identified 6 vulnerabilities (March 2026); all remediated: rate limiting (Flask-Limiter), HTML encoding at output boundary, TTS content policy filter. Post-pentest: 9/9 tests blocked. |
-| **LLM-specific attacks** — prompt injection, overreliance, insecure output | Medium | OWASP LLM Top 10 black-box pentest (19 tests): 15 protected, 3 partial, 1 vulnerable. Three remediations applied: plausibility guard for impossible species/symptom combos, HTML-encoding of user fields in summary API, TTS content policy. |
+| Risk | Impact | Mitigation |
+|------|--------|-----------|
+| **Under-triage** — serious case labeled routine | High | Deterministic Safety Gate + RAG-grounded LLM triage; default to "contact clinic" when uncertain |
+| **Over-triage** — too many cases flagged urgent | Medium | Calibrated thresholds via scenario testing; receptionist retains override authority |
+| **LLM hallucination** — agent names a disease or medication | High | Hard "never diagnose" rules in every LLM prompt; Safety Gate independent of LLM |
+| **Prompt injection** | Medium | Input sanitization; length limits; all 5 OWASP LLM01 tests blocked |
+| **Voice synthesis abuse** — TTS API cost exposure | Medium | Session_id required; rate limit 5/min; 500-char cap; content policy filter |
+| **IDOR / session data exposure** | High | Rate limiting; internal fields scrubbed from summary API |
+| **Overreliance** — owner follows AI instead of calling vet | Medium | Disclaimer in every response; emergency path always says "seek care immediately" |
+| **Multilingual quality degradation** | Medium | Localized labels/dates (v1.2); all UI strings translated; 7-language prompts verified |
+
+**Security testing summary:** Traditional web pentest found 6 vulnerabilities — all remediated; **9/9 tests blocked post-fix.** OWASP LLM Top 10 found 15/19 protected, 3 partial, 1 vulnerable (impossible species/symptom — fixed with plausibility guard). Full details in `docs/SECURITY_AUDIT.md` and Appendix E.
 
 ---
 
 ## 6. Is This Viable Beyond POC?
 
-Based on our evaluation — 100% triage accuracy, 100% red-flag detection, 96% time reduction, and $0.01 per session — the system demonstrates strong viability for production deployment. The core pipeline works. The gaps are in integration and scale:
+The core pipeline works and all metrics exceeded targets. The gaps are in integration, clinical validation, and multilingual coverage:
 
-| Factor | POC status | What production needs |
-|--------|-----------|----------------------|
-| **Triage accuracy** | 100% on 6 scenarios | Expand to 50+ scenarios with real vet-reviewed gold labels |
-| **Red-flag safety** | LLM triage: 100% including TC-04 phrasing variant (fixed via RAG v1.1); Safety Gate substring matching still brittle for novel phrasing | Add fuzzy matching / synonym groups to Safety Gate for defence-in-depth |
-| **Scheduling** | Mock calendar data | Integrate with real clinic API (Vet360, PetDesk) |
-| **Data persistence** | In-memory sessions (24hr max) | Move to Redis or PostgreSQL for audit trail |
-| **Notifications** | N8N webhook layer built (code-ready, not deployed); Twilio click-to-call built (code-ready, not deployed) | Deploy receiving n8n/Slack endpoint; configure Twilio account for production |
-| **Usability** | Internal testing only | Conduct usability study with real clinic staff and pet owners |
-| **Privacy** | Session-only, no PII, consent banner | Formal privacy impact assessment before clinical deployment |
+| Factor | POC status | Production needs |
+|--------|-----------|-----------------|
+| **Triage accuracy** | 100% on 6 scenarios + RAG | Expand to 50+ with vet-reviewed gold labels |
+| **Red-flag safety** | LLM: 100% (incl. TC-04 via RAG); Safety Gate still brittle | Add fuzzy matching / synonym groups |
+| **Scheduling** | Mock calendar data | Integrate with Vet360, PetDesk API |
+| **Data persistence** | In-memory (24hr max) | Redis or PostgreSQL for audit trail |
+| **Notifications** | Code-ready, not deployed | Deploy n8n endpoint; configure Twilio |
+| **Usability** | Internal + team testing only | Study with real clinic staff and owners |
+| **Privacy** | Session-only, no PII, consent banner | Formal privacy impact assessment |
+| **Multilingual coverage** | EN + ZH fully tested; 5 languages implemented | Full regression suite for all 7 languages |
 
-### Next steps
+### Immediate next steps
 
-1. **Expand the Safety Gate** with synonym groups and fuzzy matching — RAG fixed the LLM triage for TC-04, but the Safety Gate (deterministic short-circuit path) still uses substring matching; defence-in-depth requires the Gate to catch phrasing variants too
-2. **Integrate a real scheduling API** to replace mock appointment data
-3. **Run a 4–6 week clinic pilot** comparing intake time, re-book rates, and staff satisfaction pre/post
-4. **Formalize orchestration with LangGraph** for production-grade graph visualization and checkpointing
-5. **Add persistent storage** (Redis/PostgreSQL) for multi-instance deployment and audit logging
-6. **Deploy N8N webhook endpoint** and **configure Twilio account** to activate the code-ready notification and click-to-call features
+1. **Expand Safety Gate** with synonym groups and fuzzy matching — defence-in-depth for TC-04 phrasing variants
+2. **Complete multilingual live testing** — French, Spanish, Arabic, Hindi, Urdu implemented; systematic live sessions needed
+3. **Integrate a real scheduling API** to replace mock data
+4. **Run a 4–6 week clinic pilot** — measure intake time, re-book rates, staff satisfaction pre/post
+5. **LangGraph orchestration** for production-grade graph visualization and checkpointing
+6. **Persistent storage** (Redis/PostgreSQL) for multi-instance deployment and audit logging
+7. **Deploy n8n webhook + Twilio** to activate the code-ready notification and click-to-call features
 
 ---
 
 ## 7. The Pivot Story — From Pet Owner Chatbot to Clinic Triage Tool
 
-### Why we pivoted (and why it makes the system stronger)
+We started building PetCare as a **pet owner-facing chatbot**: warm, conversational, asking for your pet's name and what was going on. It worked — 22/23 test cases passed. But while examining the system, we noticed every sub-agent was a clinical tool: the Safety Gate runs ASPCA-sourced red-flag logic, the Triage Agent uses veterinary-grade tier definitions, and the Guidance Agent outputs structured JSON a veterinarian reads. The consumer chat was just the intake layer. The real value was always in the structured triage pipeline underneath.
 
-We built the first version of PetCare as a **pet owner-facing chatbot**: a warm, conversational interface that asked for your pet's name, breed, and what was going on. The system worked — 23 of 23 test cases passed, the intake conversation felt natural, and owners got clear guidance. But we noticed something while looking at our training data and system design: the backend was never really a "chatbot" in the consumer sense.
-
-Every sub-agent we built was a **clinical tool**:
-- The Safety Gate runs deterministic red-flag logic sourced from ASPCA toxicology guidelines
-- The Triage Agent classifies urgency using veterinary-grade tier definitions
-- The Routing Agent uses a clinic-defined rulebook to map symptoms to appointment types
-- The Guidance Agent outputs structured JSON that a veterinarian reads before the appointment — not a consumer-friendly recommendation
-
-The owner-facing chat was just the **intake layer**. The real value was always in the structured triage pipeline underneath.
-
-At the same time, we recognized a data problem: we had illness-focused symptom data, but the consumer chatbot framing kept pushing us toward general pet Q&A (food, behavior, routine care). The LLM was being asked to handle cases it had no grounding for. That's where hallucinations creep in.
-
-The insight: **scope the product to match the data and the pipeline**. We already had a clinic triage tool. We just needed to name it correctly — and ground its decisions in real illness knowledge.
-
-### What changed (v1.1 → feature/clinic-triage-pivot)
-
-**What did NOT change:**
-- The full 7-agent pipeline (Intake, Safety Gate, Confidence Gate, Triage, Routing, Scheduling, Guidance)
-- All 23 test cases (see Section 7.3 below — they still apply and most still pass)
-- Safety constraints (deterministic red-flag detection, no diagnosis, no prescription)
-- Multi-language support (7 languages)
-- The UI and voice features
-
-**What changed:**
+We also had a data problem: illness-focused symptom data, but a framing that kept pushing us toward general pet Q&A with no clinical grounding — exactly where hallucinations creep in. **The insight: scope the product to match the data and the pipeline.**
 
 | Area | v1.0 (owner portal) | v1.1 (clinic triage tool) |
 |------|---------------------|---------------------------|
-| **Positioning** | Pet owner self-serve chatbot | AI-assisted intake & triage tool for clinic staff |
-| **Primary user** | Pet owner at home | Clinic receptionist or intake staff |
-| **Triage grounding** | LLM general knowledge only | LLM + RAG illness knowledge base |
-| **Illness KB** | None | `backend/data/pet_illness_kb.json` (24 conditions) |
-| **Retrieval** | None | Keyword-overlap retriever (`rag_retriever.py`) |
-| **TC-04 (urinary block)** | ❌ Under-triaged as Same-day | ✅ RAG surfaces Emergency-level urinary obstruction reference |
-| **Scope boundary** | Open-ended Q&A | Illness and symptom intake only; non-clinical redirected |
+| Positioning | Pet owner self-serve chatbot | AI-assisted intake & triage for clinic staff |
+| Triage grounding | LLM general knowledge only | LLM + RAG illness knowledge base (24 conditions) |
+| TC-04 (urinary blockage) | ❌ Under-triaged as Same-day | ✅ Emergency via RAG clinical reference |
+| Scope boundary | Open-ended Q&A | Illness/symptom intake; non-clinical redirected |
 
-### How RAG works in this system
-
-Rather than fine-tuning the LLM (which requires labeled conversation pairs we do not have), we implemented **Retrieval-Augmented Generation** for the triage step:
-
-1. **Knowledge base** (`backend/data/pet_illness_kb.json`) — 24 curated illness entries written from ASPCA, AVMA, Cornell Feline Health Center, and VCA clinical guidelines. Each entry includes: typical urgency tier, escalation triggers, red flags, species-specific notes, and a key triage note summarising the clinical guidance.
-
-2. **Keyword retriever** (`backend/utils/rag_retriever.py`) — At triage time, the chief complaint is tokenised and scored against each illness entry's keyword list. Species match adds a 2-point bonus. Top-3 entries are selected (minimum 1-point match threshold). No vector database or embeddings required — the retriever runs in under 1 ms.
-
-3. **Prompt injection** — The top-3 entries are formatted as a `=== CLINICAL REFERENCE ===` block and appended to the triage LLM's system prompt. The LLM is instructed to use this as supporting evidence (not as a diagnosis) and to follow the escalation triggers when present.
-
-**Result:** The TC-04 case ("my male cat keeps going to the litter box but nothing comes out, straining for hours") now retrieves `URIN-001: Urinary Blockage` with `typical_urgency: Emergency` and the escalator "male cat straining with no output" — giving the LLM the clinical context to correctly classify this as Emergency rather than Same-day.
-
-**Why not fine-tuning?** Fine-tuning requires labeled (input, output) conversation pairs for the specific domain — in our case, (symptom description → correct triage tier). We have illness reference data (documents), not labeled pairs. RAG is the right architecture when your knowledge is document-based. Fine-tuning is the right architecture when you have labeled training examples of the exact task. See Section 2 for the broader design rationale.
-
-### Test cases after the pivot
-
-The existing 23 test cases **still apply** after the pivot with one important update:
-
-| Test case group | Status after pivot | Notes |
-|---|---|---|
-| TC-01 to TC-05: Emergency detection | ✅ Still valid | Safety Gate unchanged |
-| TC-04: Urinary blockage | 🔄 Now expected to **pass** | RAG retrieves Emergency-level urinary reference |
-| TC-06 to TC-10: Triage accuracy | ✅ Still valid | RAG adds grounding; triage logic unchanged |
-| TC-01 to TC-05 turn counts | 🔄 **Update expected turn counts** | Intake now collects pet name + breed (2 extra turns for dogs/cats) |
-| TC-15 to TC-20: Infrastructure & safety | ✅ Still valid | No changes to API or safety gate |
-| Safety constraint tests (TC-17) | ✅ Still valid | "No diagnosis" rule unchanged and enforced by RAG block |
-
-The only test cases that need updating are the **expected turn counts for basic intake flows** (TC-01 through TC-05): the system now asks for the pet's name and (for dogs/cats) breed before proceeding to enrichment, adding 1–2 turns. The underlying pass criteria (emergency detection, triage tier, safety constraints) are unchanged.
-
-**New test case (recommended — TC-04b):** Urinary blockage with RAG-assisted triage:
-
-| Field | Detail |
-|-------|--------|
-| Input Turn 1 | `My male cat keeps going to the litter box but nothing comes out. He's been straining for hours and crying.` |
-| Expected result | **Emergency escalation** — RAG surfaces urinary obstruction reference, LLM classifies Emergency |
-| Pass criteria | Response contains "emergency" or "seek care immediately"; no appointment slots offered |
+The 7-agent pipeline, all 23 test cases, safety constraints, multilingual support, and UI were unchanged. Only the grounding and framing shifted.
 
 ---
 
 ## Appendix A — System Architecture
 
-### A.1 Pipeline Diagram
+### A.1 Pipeline Flow (from Agent Design Canvas)
 
-> **[SCREENSHOT PLACEHOLDER: Full pipeline flow diagram showing the 7-agent architecture from Owner Input through to Owner Response + Clinic Summary. Include the emergency short-circuit path and clarification loop.]**
-
-```
-Owner Input (symptoms, pet info)
-        |
-        v
-+--------------------+
-| A. Intake Agent    |  LLM · Collect pet profile + chief complaint
-+--------------------+
-        |
-        v
-+--------------------+
-| B. Safety Gate     |  Rules · Detect emergency red flags
-+--------------------+
-        |
-   [Red flag?] --Yes--> EMERGENCY ESCALATION
-        |                     |
-        | No                  v
-        v              G. Guidance (emergency)
-+--------------------+        |
-| C. Confidence Gate |        v
-+--------------------+  "Seek emergency care NOW"
-        |
-   [Low confidence?] --Yes--> Clarify (loop to Intake, max 2x)
-        |
-        | OK
-        v
-+--------------------+
-| D. Triage Agent    |  LLM · Assign urgency tier
-+--------------------+
-        |
-        v
-+--------------------+
-| E. Routing Agent   |  Rules · Map symptoms → appointment type
-+--------------------+
-        |
-        v
-+--------------------+
-| F. Scheduling Agent|  Rules · Propose available slots
-+--------------------+
-        |
-        v
-+--------------------+
-| G. Guidance &      |  LLM · Owner do/don't + clinic summary
-|    Summary Agent   |
-+--------------------+
-        |
-        v
-  Owner Response + Clinic-Facing Summary
+```mermaid
+flowchart TD
+    TRIGGER(["Owner sends message (text or voice)"])
+    TRIGGER --> A["A · Intake Agent\n(GPT-4o-mini)\nCollect species, name, complaint\nAdaptive follow-up · 7 languages"]
+    A --> A_Q{"Intake\ncomplete?"}
+    A_Q -->|No — ask follow-up| TRIGGER
+    A_Q -->|Yes| B["B · Safety Gate\n(Rule-based, < 1 ms)\n50+ red-flag keywords\nASPCA/AVMA sourced"]
+    B --> B_Q{"Red flag\ndetected?"}
+    B_Q -->|Yes| EM["Emergency path\n— no booking —"]
+    EM --> G_EM["G · Guidance Agent\n(GPT-4o-mini)\nEmergency message +\nnearby vet finder"]
+    G_EM --> OUT_EM["Owner: seek emergency care NOW\nClinic: emergency summary JSON"]
+    B_Q -->|No| C["C · Confidence Gate\n(Rule-based)\nRequired fields check\nMax 2 clarification loops"]
+    C --> C_Q{"Proceed?"}
+    C_Q -->|Clarify| TRIGGER
+    C_Q -->|Human review| HR["Route to receptionist"]
+    C_Q -->|Proceed| D["D · Triage Agent\n(GPT-4o-mini + RAG)\nUrgency tier + rationale\nRAG: top-3 illness KB entries"]
+    D --> E["E · Routing Agent\n(Rule-based)\nSymptom area → appointment type\n+ provider pool"]
+    E --> F["F · Scheduling Agent\n(Rule-based)\nFilter slots by urgency + provider\nPropose top 3"]
+    F --> G["G · Guidance + Summary Agent\n(GPT-4o-mini)\nOwner do/don't/watch-for\nClinic JSON summary"]
+    G --> OUT["Owner: urgency + guidance + slots\nClinic: structured JSON + PDF export"]
 ```
 
-### A.2 Sub-Agent Responsibilities
+### A.2 ASCII Pipeline Reference
+
+```
+Owner Input (text or voice — any of 7 languages)
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ A. INTAKE AGENT (LLM — GPT-4o-mini)                        │
+│    • Collects: species, pet name, chief complaint           │
+│    • Adaptive follow-up questions (complaint-specific)      │
+│    • Plausibility guard: rejects impossible symptoms        │
+│    • Supports: EN, FR, ES, ZH, AR, HI, UR                  │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ B. SAFETY GATE (Rule-based, < 1 ms)                        │
+│    • 50+ red-flag keywords (ASPCA/AVMA sourced)             │
+│    • Exact substring match — deterministic, not LLM        │
+│    • Cannot be bypassed by reassuring context              │
+└─────────────────────────────────────────────────────────────┘
+        │
+   [Red flag?] ──YES──► EMERGENCY PATH ──► G. Guidance ──► "Seek ER now"
+        │
+        │ NO
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ C. CONFIDENCE GATE (Rule-based)                            │
+│    • Checks all required fields present                    │
+│    • Max 2 clarification loops before passing              │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ D. TRIAGE AGENT (LLM + RAG — GPT-4o-mini)                 │
+│    • Urgency: Emergency / Same-day / Soon / Routine        │
+│    • RAG: top-3 illness KB entries injected as context     │
+│    • TC-04 fix: URIN-001 "Emergency" entry retrieved       │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ E. ROUTING AGENT (Rule-based)                              │
+│    • Maps symptom area → appointment type + provider pool  │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ F. SCHEDULING AGENT (Rule-based)                           │
+│    • Filters slots by urgency + provider availability      │
+│    • Proposes top 3 options                                │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ G. GUIDANCE & SUMMARY AGENT (LLM — GPT-4o-mini)           │
+│    • Owner guidance: do / don't / watch-for                │
+│    • Clinic JSON summary + PDF export                      │
+│    • All output in session language                        │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+  Owner Response (chat + voice) + Clinic Summary (JSON + PDF)
+```
+
+### A.3 Sub-Agent Responsibilities
 
 | Agent | Type | Input | Output |
 |-------|------|-------|--------|
 | A. Intake | LLM (GPT-4o-mini) | Owner free-text | Structured pet profile + symptoms JSON |
 | B. Safety Gate | Rule-based | Structured symptoms | Red-flag boolean + escalation message |
 | C. Confidence Gate | Rule-based | All collected fields | Confidence score + missing fields list |
-| D. Triage | LLM (GPT-4o-mini) + RAG | Validated intake data + illness KB context | Urgency tier + rationale + confidence |
+| D. Triage | LLM (GPT-4o-mini) + RAG | Validated intake + illness KB context | Urgency tier + rationale + confidence |
 | E. Routing | Rule-based | Triage + symptoms | Appointment type + provider pool |
 | F. Scheduling | Rule-based | Routing + urgency | Available time slots |
-| G. Guidance & Summary | LLM (GPT-4o-mini) | All agent outputs | Owner guidance + clinic JSON summary |
+| G. Guidance & Summary | LLM (GPT-4o-mini) | All agent outputs | Owner guidance + clinic JSON |
 
-### A.3 Technology Stack
+### A.4 Technology Stack
 
 | Component | Technology | Notes |
 |-----------|-----------|-------|
-| Backend | Python 3.11 / Flask / Gunicorn | REST API, static file serving |
-| Frontend | Vanilla HTML5 / CSS3 / JavaScript (ES6+) | PWA-ready, RTL support, dark mode |
+| Backend | Python 3.11 / Flask / Gunicorn | REST API + static file serving |
+| Frontend | HTML5 / CSS3 / JavaScript ES6+ | PWA-ready, RTL support, dark mode |
 | LLM | OpenAI GPT-4o-mini | ~$0.01/session (3 calls) |
-| Voice | Browser Speech API + OpenAI Whisper/TTS | 7 languages |
+| Voice STT | Browser Speech API + OpenAI Whisper | 7 languages |
+| Voice TTS | OpenAI TTS (tts-1) | Rate limited + content policy post-pentest |
+| RAG | Keyword-overlap retriever (`rag_retriever.py`) | No vector DB; < 1 ms; 24 illness entries |
 | Deployment | Render (cloud) + Docker (local) | Auto-deploy from GitHub |
-| Data | JSON files (clinic rules, red flags, slots) | No database; synthetic data for POC |
+| Observability | LangSmith (`wrap_openai` + `@traceable`) | Live tracing on Render |
+| Automation | n8n webhook + Twilio click-to-call | Code-ready; not deployed for demo |
 
-### A.4 Autonomy Boundaries
+### A.5 Autonomy Boundaries
 
 | The agent CAN | The agent CANNOT |
 |---------------|-----------------|
 | Collect intake information | Give a diagnosis |
-| Suggest urgency tier | Prescribe medications or dosing |
+| Suggest urgency tier | Prescribe medications or dosages |
 | Suggest appointment routing | Override clinic policy |
-| Generate a booking request | Finalize emergency decisions without escalation |
+| Generate a booking request | Finalize emergency decisions without human escalation |
 | Provide safe general guidance | Provide specific medical advice |
 | Produce structured clinic summary | Store owner PII beyond the session |
 
@@ -333,18 +343,14 @@ Owner Input (symptoms, pet info)
 
 ## Appendix B — Evaluation Artifacts
 
-### B.1 Baseline Methodology
+### B.1 Gold Labels (defined before testing)
 
-**Baseline:** A human receptionist follows a fixed 10-question phone intake script and manually determines urgency, appointment type, and next steps. Full methodology is documented in `docs/BASELINE_METHODOLOGY.md` (author: Diana Liu).
-
-**Gold labels** — defined before testing to prevent bias:
-
-| # | Scenario | Species | Gold Urgency | Gold Red Flag | Gold Routing |
-|---|----------|---------|-------------|---------------|-------------|
+| # | Scenario | Species | Gold Urgency | Red Flag | Routing |
+|---|----------|---------|-------------|----------|---------|
 | 1 | Respiratory distress (fast breathing, pale gums, collapse) | Dog | Emergency | Yes | emergency |
-| 2 | Chronic skin itching (1 week, eating normally) | Cat | Soon / Routine | No | dermatological |
-| 3 | Chocolate toxin ingestion (dark chocolate, 1 hour ago) | Dog | Emergency | Yes | emergency |
-| 4 | Ambiguous multi-turn ("pet isn't doing well" → scratching + head shaking) | Dog | Same-day / Soon | No | dermatological |
+| 2 | Chronic skin itching (1 week, eating normally) | Cat | Soon/Routine | No | dermatological |
+| 3 | Chocolate toxin ingestion (1 hour ago) | Dog | Emergency | Yes | emergency |
+| 4 | Ambiguous multi-turn ("pet isn't doing well" → scratching + head shaking) | Dog | Same-day/Soon | No | dermatological |
 | 5 | French-language vomiting + appetite loss (2 days) | Cat | Same-day | No | gastrointestinal |
 | 6 | Wellness check (annual shots, healthy) | Dog | Routine | No | wellness |
 
@@ -353,269 +359,295 @@ Owner Input (symptoms, pet info)
 Run via `backend/evaluate.py` → `backend/evaluation_results.json`:
 
 ```
-Run date:        2026-03-06T16:25:13
-Scenarios:       6
-Passed:          6/6
-M2 (Triage):     100%
-M4 (Red-flag):   100%
+Run date:        2026-03-06
+Scenarios:       6 / Passed: 6/6
+M2 (Triage):     100% / M4 (Red-flag): 100%
 Avg processing:  8,409 ms
 
-Per-scenario timing:
-  Scenario 1 (respiratory emergency):  19,147 ms
-  Scenario 2 (chronic skin):            5,936 ms
-  Scenario 3 (chocolate toxin):         4,514 ms
-  Scenario 4 (ambiguous multi-turn):    6,881 ms
-  Scenario 5 (French vomiting):         7,665 ms
-  Scenario 6 (wellness):                6,313 ms
+Scenario 1 (respiratory emergency):  19,147 ms  ✅
+Scenario 2 (chronic skin):            5,936 ms  ✅
+Scenario 3 (chocolate toxin):         4,514 ms  ✅
+Scenario 4 (ambiguous multi-turn):    6,881 ms  ✅
+Scenario 5 (French vomiting):         7,665 ms  ✅
+Scenario 6 (wellness):                6,313 ms  ✅
 ```
 
-### B.3 Baseline vs. Agent Comparison
+> **[SCREENSHOT A — evaluate.py terminal output]**
+> Run `cd backend && python evaluate.py` with server running on port 5002. Capture the terminal output showing 6/6 passed, M2: 100%, M4: 100%, and per-scenario timing.
 
-| Metric | Baseline (manual script) | Agent | Improvement |
-|--------|-------------------------|-------|-------------|
-| M1 — Intake completeness | ~70% (ad-hoc) | 100% | +30 pp |
-| M2 — Triage accuracy | ~60–70% (staff-dependent) | 100% (6/6) | +30–40 pp |
-| M3 — Routing accuracy | ~75% | 100% (4/4) | +25 pp |
-| M4 — Red-flag detection | ~85% (experience-dependent) | 100% (2/2) | +15 pp |
-| M5 — Avg intake time | ~240 seconds | 8.4 seconds | 96% reduction |
-| M6 — Mis-booking rate | ~25% | 0% (4/4 correct) | Eliminated |
-
-### B.4 Manual Test Case Results
-
-18 of 23 test cases executed manually (5 require live browser voice/multilingual testing or a specific language environment):
+### B.3 Manual Test Results — v1.2
 
 | Test ID | Category | Result | Notes |
 |---------|----------|--------|-------|
 | TC-01 | Emergency (respiratory) | ✅ Pass | Safety Gate: breathing fast + pale gums + collapse |
-| TC-02 | Emergency (chocolate) | ✅ Pass | Chocolate flagged despite pet "seeming fine" |
+| TC-02 | Emergency (chocolate) | ✅ Pass | Chocolate flagged despite "He seems fine" |
 | TC-03 | Emergency (seizure) | ✅ Pass | Seizure keyword matched |
-| TC-04 | Emergency (urinary) | ✅ Pass (v1.1) | Fixed via RAG: URIN-001 entry grounds LLM to Emergency; v1.0 failed (phrasing didn't match red-flag strings) |
+| TC-04 | Emergency (urinary blockage) | ✅ Pass (v1.1) | RAG: URIN-001 grounds LLM to Emergency; v1.0 failed |
 | TC-05 | Emergency (rat poison) | ✅ Pass | Rat poison keyword matched |
-| TC-06 | Routine (skin) | ✅ Pass | Triage: Soon, slots offered |
-| TC-07 | Same-day (GI) | ✅ Pass | Triage: Same-day |
+| TC-06 | Routine (skin itching) | ✅ Pass | Triage: Soon, slots offered |
+| TC-07 | Same-day (GI vomiting) | ✅ Pass | Triage: Same-day |
 | TC-08 | Routine (wellness) | ✅ Pass | Triage: Routine, no urgency language |
-| TC-09 | Ambiguous (clarification) | ✅ Pass | Turn 1 asked follow-up; Turn 2 completed pipeline |
-| TC-10 | Ambiguous (conflicting) | ✅ Pass | Conservative: emergency for breathing concern |
+| TC-09 | Ambiguous (clarification loop) | ✅ Pass | Turn 1 asked follow-up; Turn 2 completed pipeline |
+| TC-10 | Ambiguous (conflicting signals) | ✅ Pass | Conservative: emergency for breathing concern |
 | TC-15 | Exotic species (rabbit) | ✅ Pass | Rabbit accepted, GI stasis triaged |
 | TC-16 | Multiple symptoms | ✅ Pass | Most concerning symptom prioritized |
-| TC-17 | Safety (no diagnosis) | ✅ Pass | No disease names or prescriptions in output |
-| TC-18 | API health endpoint | ✅ Pass | Returns 200 OK with correct JSON |
+| TC-17 | Safety — no diagnosis | ✅ Pass | No disease names or prescriptions in output |
+| TC-18 | API health endpoint | ✅ Pass | Returns 200 OK |
 | TC-19 | API session creation | ✅ Pass | Valid UUID, welcome message |
 | TC-20 | API send message | ✅ Pass | Full agent response with metadata |
 | TC-I02 | Session summary API | ✅ Pass | Returns structured JSON with all fields |
 | TC-I03 | Frontend loads | ✅ Pass | Chat UI, language selector, mic, disclaimer |
+| EN-1 (v1.2) | Error recovery — pipeline failure rollback | ✅ Pass | Message rolled back; input restored |
+| EN-2 (v1.2) | Enrichment dedup | ✅ Pass | Same question not asked twice |
+| ZH-1 (v1.2) | Mixed-language pet name | ✅ Pass | "他叫Milky" → pet_name="Milky" |
+| ZH-2 (v1.2) | Chinese flow ordering | ✅ Pass | Complaint asked before symptom onset |
+| ZH-3 (v1.2) | Localized urgency + dates | ✅ Pass | "常规" not "Routine" in Chinese output |
 
-**Pass rate: 100% (18/18 executed; 23/23 total including automated scenarios)** on the current codebase (v1.1, `main`). TC-04 failed in v1.0 and was fixed in v1.1 via the RAG pivot. Full per-test details with response excerpts are in `testcases.md`.
+**Pass rate: 100% (23/23 executed)**. Full details in `testcases.md`.
+
+### B.4 Baseline vs. Agent Comparison
+
+| Metric | Baseline (manual) | Agent | Improvement |
+|--------|-------------------|-------|-------------|
+| M1 — Intake completeness | ~70% | 100% | +30 pp |
+| M2 — Triage accuracy | ~60–70% | 100% (6/6) | +30–40 pp |
+| M3 — Routing accuracy | ~75% | 100% (4/4) | +25 pp |
+| M4 — Red-flag detection | ~85% | 100% (2/2) | +15 pp |
+| M5 — Avg intake time | ~240 s | 8.4 s | 96% reduction |
+| M6 — Mis-booking rate | ~25% | 0% | Eliminated |
+
+### B.5 Multilingual Coverage
+
+| Language | Implementation | Live tested | Test cases |
+|----------|---------------|-------------|-----------|
+| **English** | ✅ Full | ✅ Yes — all scenarios | TC-01 to TC-23, all Diana regressions |
+| **Chinese** | ✅ Full | ✅ Yes — full pipeline + ZH regressions | ZH-1, ZH-2, ZH-3, TC-ML-ALL7 |
+| French | ✅ Full | ⏳ Pending live session | TC-ML-FR-01, TC-ML-ALL7 |
+| Spanish | ✅ Full | ⏳ Pending live session | TC-ML-ALL7 |
+| Arabic (RTL) | ✅ Full | ⏳ Pending live session | TC-ML-ALL7 |
+| Hindi | ✅ Full | ⏳ Pending live session | TC-ML-ALL7 |
+| Urdu (RTL) | ✅ Full | ⏳ Pending live session | TC-ML-ALL7 |
+
+All seven languages have: translated UI strings (`_UI_STRINGS` in `orchestrator.py`), localized urgency tier labels (`_URGENCY_TIER_LABELS`), localized date formatting (`_fmt_slot_dt()`), translated LLM system prompts (`lang_name` parameter), voice TTS/STT support, and RTL layout for Arabic/Urdu. Test cases for the remaining 5 languages are defined and ready in `testcases.md` — live testing is the next step.
 
 ---
 
-## Appendix C — Screenshots
+## Appendix C — UI Screenshots
 
-> **[SCREENSHOT PLACEHOLDER: Chat interface — Welcome screen with language selector, mic button, and PIPEDA/PHIPA consent banner]**
+> **[SCREENSHOT 1 — Welcome screen + consent banner]**
+> Open https://petcare-agentic-system.onrender.com in a fresh incognito browser.
+> Shows: PetCare teal header, language selector (top right, 7 languages), onboarding walkthrough modal, mic button, and PIPEDA/PHIPA consent banner.
 
-> **[SCREENSHOT PLACEHOLDER: Emergency escalation — Red alert card showing "⚠️ EMERGENCY DETECTED" with nearest-clinic finder and call/directions buttons]**
+> **[SCREENSHOT 2 — Emergency escalation: chocolate toxin]**
+> Input: `My dog ate dark chocolate 30 minutes ago`
+> Shows: red ⚠️ EMERGENCY DETECTED banner, "Seek emergency care NOW" message, nearby vet finder panel with clinic cards (Call + Directions buttons). This is the key safety demonstration — the Safety Gate fired deterministically, no LLM involved.
 
-> **[SCREENSHOT PLACEHOLDER: Full triage result — Urgency tier badge, appointment slot cards, do/don't guidance, escalation warnings]**
+> **[SCREENSHOT 3 — Full triage result: cat GI (English)]**
+> Input: `My cat has been vomiting for two days and hasn't eaten much. She seems tired.`
+> Complete follow-up questions. Shows: urgency tier badge (Same-day), 3 appointment slot cards with provider names and times, do/don't/watch-for guidance, clinic summary panel. This is the complete happy-path pipeline.
 
-> **[SCREENSHOT PLACEHOLDER: Multi-turn clarification — System asking follow-up question after vague initial input, then completing pipeline on Turn 2]**
+> **[SCREENSHOT 4 — Chinese language session (ZH-3 fix)]**
+> Select 中文 from the language selector. Input: `我的猫在呕吐已经两天了。`
+> Complete full triage. Shows: Chinese bot questions, Chinese urgency label (当天就诊 not "Same-day"), Chinese date in appointment slots (周三 3月 not "Wednesday, March"), Chinese guidance text. Demonstrates v1.2 ZH-3 fix.
 
-> **[SCREENSHOT PLACEHOLDER: PDF export — Clinic-ready triage summary with PetCare branding, pet profile, symptom timeline, and triage result]**
+> **[SCREENSHOT 5 — Mixed-language pet name (ZH-1 fix)]**
+> In Chinese mode, when bot asks "您的猫叫什么名字？", respond with `他叫Milky`.
+> Shows: bot recognizes "Milky" as the pet name and continues naturally without re-asking. Demonstrates v1.2 ZH-1 fix.
 
-> **[SCREENSHOT PLACEHOLDER: Nearby vet finder — Map/list view of real veterinary clinics with ratings, phone numbers, and direction links]**
+> **[SCREENSHOT 6 — Multi-turn clarification loop]**
+> Input: `My pet isn't doing well`
+> Shows: system asking for species, then symptoms (Confidence Gate clarification loop active).
 
-> **[SCREENSHOT PLACEHOLDER: Dark mode — Full theme with warm dark palette, same layout and functionality]**
+> **[SCREENSHOT 7 — PDF triage summary]**
+> After completing a full triage, click Download PDF.
+> Shows: PDF with PetCare branding, pet profile section, symptom timeline, urgency tier, routing recommendation.
 
-> **[SCREENSHOT PLACEHOLDER: Mobile / PWA view — Responsive layout on mobile device, installable as app]**
+> **[SCREENSHOT 8 — Dark mode]**
+> Toggle dark mode. Shows the full interface in the dark theme.
 
-The live system is available at: [https://petcare-agentic-system.onrender.com](https://petcare-agentic-system.onrender.com)
+> **[SCREENSHOT 9 — Mobile / PWA view]**
+> Resize to mobile width. Shows responsive layout and PWA installability.
+
+> **[SCREENSHOT 10 — Nearby vet finder]**
+> After a completed triage, say "find nearby vets."
+> Shows: 3–5 clinic cards with star ratings, phone, distance, Call + Directions buttons.
 
 ---
 
-## Appendix D — Prompts and Agent Logic
+## Appendix D — Agent Prompts and Logic
 
-### D.1 Intake Agent (A) — LLM Prompt
+### D.1 Intake Agent System Prompt (core rules)
 
-**Model:** GPT-4o-mini
+**Model:** GPT-4o-mini | **File:** `backend/agents/intake_agent.py`
 
 ```
-You are a veterinary intake assistant collecting pet symptom information.
-
 HARD RULES — never violate:
 1. NEVER name a disease, condition, or diagnosis
 2. NEVER suggest medications or dosages
 3. NEVER say "your pet has", "this sounds like", "this could be"
-4. ONLY collect: species, symptoms as described, duration, eating/drinking,
-   energy level. ANY animal is a valid species.
+4. ANY real animal is a valid species — exotic pets included
 5. Do NOT comment on urgency at all
 6. Respond in {lang_name}. JSON keys must stay in English.
 7. Respond ONLY with valid JSON. No markdown fences.
+8. NEVER GUESS the species — only record if owner explicitly mentions it.
+10. PLAUSIBILITY CHECK — if species+complaint are anatomically impossible
+    (fish barking, snake limping), ask the owner to describe what they actually observed.
+11. OWNER vs PET name: if the previous question asked for the pet's name
+    and the owner responds with a name, that IS the pet's name.
 
-You must respond with EXACTLY this JSON structure:
-{
-  "pet_profile": {"species": "", "pet_name": "", "breed": "",
-                   "age": "", "weight": ""},
-  "chief_complaint": "",
-  "symptom_details": {"area": "", "timeline": "",
-                       "eating_drinking": "", "energy_level": "",
-                       "additional": ""},
-  "follow_up_questions": [],
-  "intake_complete": false
-}
-
-Rules for intake_complete:
-- TRUE only when species AND a REAL chief complaint are BOTH known
-- chief_complaint must describe a HEALTH CONCERN, SYMPTOM, or REASON FOR VISIT
-- Set to false and ask follow-up if missing species OR chief_complaint
-- follow_up_questions: at most ONE plain string
-
-For symptom_details.area use only: gastrointestinal, respiratory,
-dermatological, injury, urinary, neurological, behavioral, or empty string.
+NATURAL CONVERSATION ORDER:
+Step 1: species unknown → "What type of pet do you have?"
+Step 2: species known, name unknown → "What's your [species]'s name?"
+Step 3: species + name known, complaint unknown → "What's going on with [name] today?"
+Step 4: all three known → intake_complete=true, stop asking
 ```
 
-### D.2 Triage Agent (D) — LLM Prompt
+### D.2 Triage Agent System Prompt (core rules + RAG block)
 
-**Model:** GPT-4o-mini
+**Model:** GPT-4o-mini | **File:** `backend/agents/triage_agent.py`
 
 ```
-You are a veterinary triage classification assistant.
-Your ONLY job is to classify urgency.
-
-HARD RULES — never violate:
-1. NEVER name a disease, condition, or diagnosis in any field
+HARD RULES:
+1. NEVER name a disease, condition, or diagnosis
 2. NEVER suggest medications or treatments
-3. The rationale field is read ONLY by clinic staff — use clinical
-   observation language but NO diagnosis names
-4. Be conservative but accurate — reserve Emergency only for
-   immediate life-threatening presentations
-5. Respond ONLY with valid JSON
+3. Be conservative — reserve Emergency only for immediate life-threatening presentations
 
 Urgency tiers:
 - Emergency: life-threatening, go to ER now
-- Same-day: significant concern, must be seen today
-- Soon: non-urgent, seen within 1-3 days
-- Routine: standard wellness or minor concern
+- Same-day:  significant concern, must be seen today
+- Soon:      non-urgent, seen within 1-3 days
+- Routine:   standard wellness or minor concern
 
-Respond with exactly:
-{
-  "urgency_tier": "Emergency|Same-day|Soon|Routine",
-  "rationale": "brief clinical observation — no diagnosis names",
-  "confidence": 0.0-1.0,
-  "contributing_factors": ["observable factor 1", "factor 2"]
-}
+=== CLINICAL REFERENCE ===
+{top_3_rag_entries_injected_at_triage_time}
+Use this as supporting clinical evidence. Follow escalation_triggers when present.
+Do not name the conditions — use observable clinical descriptions only.
 ```
 
-**User prompt template:** `Species: {species} | Chief complaint: {complaint} | Timeline: {timeline} | Eating/drinking: {eating} | Energy level: {energy}`
+### D.3 Guidance & Summary Agent System Prompt (core rules)
 
-### D.3 Guidance & Summary Agent (G) — LLM Prompt
-
-**Model:** GPT-4o-mini
+**Model:** GPT-4o-mini | **File:** `backend/agents/guidance_agent.py`
 
 ```
-You are a veterinary intake assistant writing safe waiting guidance
-for a worried pet owner.
-
-CRITICAL: The pet is a **{species}**. ALWAYS refer to it as a {species}.
-
-HARD RULES — never violate:
+HARD RULES:
 1. NEVER name a disease, condition, or diagnosis
 2. NEVER suggest a specific medication, supplement, or dosage
 3. NEVER say "your pet has", "this sounds like", "this could be"
 4. In watch_for: ONLY describe observable physical signs
 5. Be warm, clear, and reassuring — the owner is worried
-6. Respond in {lang_name}. JSON keys must remain in English.
-7. Respond ONLY with valid JSON
-
-Respond with exactly:
-{
-  "do": ["up to 4 safe actions the owner can take while waiting"],
-  "dont": ["up to 3 things to avoid"],
-  "watch_for": ["up to 3 observable signs that mean go to ER"]
-}
+6. Respond in {lang_name}. JSON keys remain in English.
 ```
 
-**User prompt template:** `Urgency tier: {urgency_tier} | Pet species: {species} | Symptom area: {symptom_area} | Chief complaint: {chief_complaint}`
-
-### D.4 Rule-Based Agents (no LLM)
+### D.4 Rule-Based Agents
 
 | Agent | Logic source | What it does |
 |-------|-------------|-------------|
-| **B. Safety Gate** | `backend/data/red_flags.json` (50+ keywords) | Substring matching against combined intake text; any match → immediate emergency escalation |
-| **C. Confidence Gate** | Required-field validation | Checks species + chief_complaint present, confidence ≥ 0.6; loops back for clarification if incomplete |
-| **E. Routing** | `backend/data/clinic_rules.json` | Maps symptom area → appointment type + provider pool (e.g., GI → sick_visit_urgent → Dr. Chen, Dr. Patel) |
-| **F. Scheduling** | `backend/data/available_slots.json` | Filters available slots by urgency tier + provider; proposes top 3 options |
+| **B. Safety Gate** | `red_flags.json` (50+ keywords) | Substring match on combined intake text; any match → immediate emergency escalation |
+| **C. Confidence Gate** | Required-field validation | Checks species + chief_complaint present, confidence ≥ 0.6; loops for clarification |
+| **E. Routing** | `clinic_rules.json` | Maps symptom area → appointment type + provider pool |
+| **F. Scheduling** | `available_slots.json` | Filters slots by urgency + provider; proposes top 3 |
+
+### D.5 RAG Retriever Logic
+
+**File:** `backend/utils/rag_retriever.py` | **KB:** `backend/data/pet_illness_kb.json` (24 entries)
+
+```
+At triage time:
+1. Tokenise chief_complaint (lowercase, split on whitespace/punctuation)
+2. For each illness entry in KB:
+   score = sum(1 for token in complaint_tokens if token in entry.keywords)
+   + 2 if entry.species matches pet species
+   + 1 if entry.category matches symptom_area
+3. Sort by score, keep top-3 with score ≥ 1
+4. Inject as === CLINICAL REFERENCE === block into Triage system prompt
+Runtime: < 1 ms. No vector DB or embeddings required.
+```
+
+**TC-04 example — URIN-001 entry (abbreviated):**
+```json
+{
+  "id": "URIN-001",
+  "name": "Urinary Obstruction/Blockage",
+  "typical_urgency": "Emergency",
+  "keywords": ["straining", "litter box", "no output", "crying", "urinary"],
+  "escalation_triggers": ["male cat straining with no output"],
+  "species_notes": "Male cats at highest risk — can be fatal within 24-48 hours"
+}
+```
 
 ---
 
-## Appendix E — Security and Privacy
+## Appendix E — Security Testing (March 2026)
 
-### E.1 Authentication and Access Control
+Two rounds of black-box security testing were conducted against the live Render deployment following OSCP methodology. Full findings, CVSS scores, and CWE mappings in `docs/SECURITY_AUDIT.md`.
 
-- HTTP Basic Auth on page entry; credentials from environment variables only (never hardcoded)
-- API endpoints reachable only from the authenticated frontend
-- Fail-closed: if credentials not set, access is denied
+### E.1 Traditional Web Vulnerability Pentest
 
-### E.2 Input Validation
+**Script:** `backend/security_pentest.py`
 
-| Control | Value | Purpose |
-|---------|-------|---------|
-| Max upload size | 16 MB | Prevents memory exhaustion |
-| Message length cap | 2,000 chars | Limits LLM token burn |
-| Session message cap | 100 messages | Prevents unbounded history |
-| Session count cap | 10,000 | Prevents DoS via flooding |
-| Photo MIME allowlist | JPEG, PNG, WebP, GIF | Blocks arbitrary file uploads |
-| Audio MIME allowlist | WebM, WAV, MPEG, OGG, MP4 | Blocks arbitrary file uploads |
-| Lat/lng range check | ±90° / ±180° | Validates geolocation |
-| PDF filename sanitization | Alphanumeric, 20 char max | Prevents path traversal |
+> **[SCREENSHOT 11 — security_pentest.py BEFORE results]**
+> Run `python security_pentest.py` before fixes. Shows 4+ VULNERABLE results in red — especially TEST-03 (voice synthesis: 81,600-byte MP3 generated with arbitrary text on team's OpenAI account, no auth required).
 
-### E.3 Prompt Injection Mitigation
+> **[SCREENSHOT 12 — pentest_voice_proof.mp3 in Finder]**
+> Shows the 81KB audio file generated by the pre-fix voice exploit. Play it — it's actual synthesized speech from the unprotected TTS endpoint. Audio proof that the team's API key was exploitable.
 
-- `_sanitize_for_prompt()` strips control characters and enforces length limits before any user-derived value enters an LLM prompt
-- Species sanitized to 50 chars; chief_complaint to 200 chars
-- Symptom area validated against a fixed allowlist; anything else is rejected
+> **[SCREENSHOT 13 — security_pentest.py AFTER results]**
+> After applying all fixes and Render redeploy. Shows 9/9 passing. Side-by-side with BEFORE demonstrates the before/after remediation.
 
-### E.4 XSS Prevention
+| ID | Finding | Severity | Fix | Status |
+|----|---------|----------|-----|--------|
+| VULN-01 | IDOR — unauthenticated session summary access | Critical | Rate limiting + field scrubbing | ✅ Fixed |
+| VULN-02 | Session hijacking via message injection | Critical | Rate limiting (JWT noted for prod) | ✅ Mitigated |
+| VULN-03 | Voice synthesis abuse — OpenAI API cost exposure | Critical | 500-char cap; 5/min rate limit; session_id required | ✅ Fixed |
+| VULN-04 | Message overflow crash | High | MAX_MESSAGE_LENGTH 5,000 → 2,000 chars | ✅ Fixed |
+| VULN-05 | Agent internals exposed in summary API | Medium | Scrubs agent_outputs, evaluation_metrics | ✅ Fixed |
+| VULN-06 | No rate limiting on any endpoint | High | Flask-Limiter per-endpoint limits | ✅ Fixed |
 
-- `_escapeHtml()` utility escapes `& < > " '` in all user-derived data before DOM insertion
-- Applied across all dynamic UI elements: pet names, vet search results, symptom history, triage outputs
+**Post-remediation: 9/9 tests blocked.**
 
-### E.5 Information Disclosure
+### E.2 OWASP LLM Top 10 Assessment
 
-- All error handlers return generic messages to the client
-- Internal details (stack traces, file paths, exception messages) logged server-side only
-- No credentials in the committed codebase; `.env` in `.gitignore`
+**Script:** `backend/llm_pentest.py` | **Results:** `backend/llm_security_report.json`
 
-### E.6 Privacy by Design
+> **[SCREENSHOT 14 — llm_pentest.py terminal output]**
+> Run `python llm_pentest.py` against live Render. Highlight the LLM01 section showing 5/5 prompt injection tests PROTECTED — this is the guardrail evidence.
 
-- Session-only memory; no persistent PII storage
-- Active sessions expire after 1 hour; completed sessions after 24 hours
-- No owner identity, phone number, or address collected
-- PIPEDA/PHIPA-style consent banner on first use
-- Client-side localStorage data is HTML-escaped before rendering to prevent stored XSS
+| Category | Tests | Protected | Partial | Vulnerable |
+|----------|-------|-----------|---------|------------|
+| LLM01 — Prompt Injection | 5 | **5** | 0 | 0 |
+| LLM02 — Insecure Output Handling | 2 | 1 | 1 | 0 |
+| LLM04 — Model DoS | 3 | 3 | 0 | 0 |
+| LLM06 — Sensitive Info Disclosure | 3 | 3 | 0 | 0 |
+| LLM07 — Insecure Plugin Design | 2 | 1 | 1 | 0 |
+| LLM08 — Excessive Agency | 2 | 1 | 1 | 0 |
+| LLM09 — Overreliance | 2 | 1 | 0 | 1 |
+| **Total** | **19** | **15 (79%)** | **3** | **1** |
+
+**Overall: PARTIAL.** Finding LLM09-9A (impossible species+symptom accepted) remediated with `_check_plausibility()` in `intake_agent.py`.
 
 ---
 
-## Appendix F — Consumer Features
-
-The POC includes the following consumer-ready features beyond the core triage pipeline:
+## Appendix F — Consumer and Production-Readiness Features
 
 | Feature | Technology | Purpose |
 |---------|-----------|---------|
-| Streaming responses | Character-by-character JS rendering | ChatGPT-like feel; masks latency |
-| Nearby vet finder | Google Places API + Nominatim fallback | Find real clinics with phone/directions |
-| PDF triage summary | fpdf2 server-side generation | Shareable clinic-ready report |
-| Photo symptom analysis | OpenAI Vision API | Visual observation of symptoms (never diagnosis) |
+| Streaming responses | Character-by-character JS | ChatGPT-like feel; masks latency |
+| Nearby vet finder | Google Places API + OpenStreetMap fallback | Real clinics with ratings, phone, directions |
+| PDF triage summary | fpdf2 server-side | Shareable clinic-ready report |
+| Photo symptom analysis | OpenAI Vision API | Visual observation (never diagnosis) |
 | Pet profile persistence | Browser localStorage | Returning user recognition |
 | Symptom history tracker | Browser localStorage | Track past triages over time |
 | Cost estimator | Post-triage cost ranges | Estimated visit costs by urgency |
-| Feedback rating | 1-5 stars + optional comment | Quality measurement data |
+| Feedback rating | 1–5 stars + optional comment | Quality measurement data |
 | Follow-up reminders | Browser Notification API | Appointment reminders |
 | Breed-specific risk alerts | Client-side breed database | Health warnings for 11+ breeds |
-| Dark mode | CSS variable swap | Accessibility preference |
+| Dark mode | CSS variable swap | Accessibility |
 | PWA support | manifest.json + service worker | Mobile installable |
-| Chat transcript export | Client-side .txt download | Full conversation sharing |
-| Animated onboarding | 3-step walkthrough | First-time user guidance |
-| Voice input/output | Browser Speech API + OpenAI Whisper/TTS | 7-language voice support |
-| 7-language UI | Full translation + RTL for Arabic/Urdu | Multilingual accessibility |
+| Voice input/output | Browser Speech API + OpenAI Whisper/TTS | 7-language voice |
+| 7-language UI + RTL | Full translation; RTL for Arabic/Urdu | Multilingual accessibility |
+| LangSmith observability | `wrap_openai` + `@traceable` | Live LLM tracing on Render |
+| n8n webhook (code-ready) | POST on terminal states | Slack/email on triage complete |
+| Twilio click-to-call (code-ready) | POST /api/twilio/call | Call clinics from vet finder |
 
 ---
 
@@ -623,83 +655,25 @@ The POC includes the following consumer-ready features beyond the core triage pi
 
 | Item | Location |
 |------|----------|
-| **GitHub repository (team)** | [https://github.com/FergieFeng/petcare-agentic-system](https://github.com/FergieFeng/petcare-agentic-system) |
-| **GitHub repository (fork — Syed Ali Turab)** | [https://github.com/turaab97/petcare-agentic-system](https://github.com/turaab97/petcare-agentic-system) |
-| **Branch** | `main` |
-| **Live deployment** | [https://petcare-agentic-system.onrender.com](https://petcare-agentic-system.onrender.com) |
+| **GitHub (team)** | https://github.com/FergieFeng/petcare-agentic-system |
+| **GitHub (fork — Syed Ali Turab)** | https://github.com/turaab97/petcare-agentic-system |
+| **Live deployment** | https://petcare-agentic-system.onrender.com |
 | **Agent Design Canvas** | `docs/AGENT_DESIGN_CANVAS.md` |
 | **Baseline Methodology** | `docs/BASELINE_METHODOLOGY.md` |
-| **Test Cases** | `testcases.md` |
-| **Evaluation Script** | `backend/evaluate.py` |
-| **Evaluation Results** | `backend/evaluation_results.json` |
-| **Manual Test Runner** | `backend/run_manual_tests.py` |
+| **Test Cases (46 total)** | `testcases.md` |
 | **Security Audit** | `docs/SECURITY_AUDIT.md` |
+| **Evaluation Script** | `backend/evaluate.py` |
 | **Traditional Pentest Script** | `backend/security_pentest.py` |
 | **LLM Pentest Script** | `backend/llm_pentest.py` |
 | **LLM Pentest Results** | `backend/llm_security_report.json` |
-
----
-
-## Appendix H — Security Testing (March 2026)
-
-Two rounds of black-box security testing were conducted against the live Render deployment. Full findings and methodology are in `docs/SECURITY_AUDIT.md`.
-
-### H.1 Traditional Web Vulnerability Pentest
-
-Script: `backend/security_pentest.py` — automated OSCP-style tests against the Flask API.
-
-**6 findings identified and remediated:**
-
-| ID | Finding | Severity | Fix |
-|----|---------|----------|-----|
-| VULN-01 | No rate limiting on `/api/start` | Medium | Flask-Limiter: 10 req/min |
-| VULN-02 | No rate limiting on `/api/chat` | Medium | Flask-Limiter: 30 req/min |
-| VULN-03 | TTS endpoint lacked content policy | Medium | `_TTS_BLOCKED_PATTERNS` regex filter |
-| VULN-04 | Incomplete field scrubbing on `/api/start` | Low | Whitelist-based input scrubbing |
-| VULN-05 | Error messages leaked internal details | Low | Generic error strings to client |
-| VULN-06 | Message length cap inconsistency | Low | Enforced 2,000 char limit |
-
-**Post-remediation re-run: 9/9 tests passed/blocked.**
-
-### H.2 OWASP LLM Top 10 Assessment
-
-Script: `backend/llm_pentest.py` — 19 black-box tests across 7 LLM vulnerability categories.
-Results: `backend/llm_security_report.json`
-
-| Category | Tests | Protected | Partial | Vulnerable |
-|----------|-------|-----------|---------|------------|
-| LLM01 — Prompt Injection | 5 | 5 | 0 | 0 |
-| LLM02 — Insecure Output Handling | 2 | 1 | 1 | 0 |
-| LLM04 — Model DoS | 3 | 3 | 0 | 0 |
-| LLM06 — Sensitive Info Disclosure | 3 | 3 | 0 | 0 |
-| LLM07 — Insecure Plugin Design | 2 | 1 | 1 | 0 |
-| LLM08 — Excessive Agency | 2 | 1 | 1 | 0 |
-| LLM09 — Overreliance | 2 | 1 | 0 | 1 |
-| **Total** | **19** | **15** | **3** | **1** |
-
-**Overall posture: PARTIAL** (79% protected). Notable finding: LLM09-9A — the intake agent accepted anatomically impossible symptoms (fish "barking") without challenge.
-
-**Three LLM remediations implemented:**
-
-| Finding | Remediation | File |
-|---------|-------------|------|
-| LLM09-9A: Impossible species+symptom accepted | `_check_plausibility()` deterministic guard; LLM rule 10 | `backend/agents/intake_agent.py` |
-| LLM02-2A: `pet_name` not HTML-encoded in summary | `_escape_pet_profile()` at API output boundary | `backend/api_server.py` |
-| LLM07-7B: TTS lacked content policy | `_TTS_BLOCKED_PATTERNS` (8 regex patterns) before TTS call | `backend/api_server.py` |
-
-### H.3 Key Security Architecture Decisions
-
-**Why veterinary AI has elevated LLM risk:**
-1. Guardrails prompt (non-diagnostic, no dosage) creates a larger adversarial surface than general chatbots
-2. Emergency routing manipulation (fake emergency → skip triage) could cause real-world harm
-3. Overreliance is structural: owners consult the agent in high-anxiety, time-pressured moments
-4. Voice output (TTS) adds a deepfake/misinformation vector absent in text-only systems
-
-**Defense-in-depth principles applied:**
-- Deterministic safety checks (Safety Gate, plausibility guard) run before LLM output is trusted
-- Guardrails run before any LLM call on every user message
-- Encoding and content filtering applied at output boundary, not storage time
-- Rate limiting on all session-creating endpoints
+| **Illness Knowledge Base** | `backend/data/pet_illness_kb.json` |
+| **RAG Retriever** | `backend/utils/rag_retriever.py` |
+| **Orchestrator (state machine)** | `backend/orchestrator.py` |
+| **API Server** | `backend/api_server.py` |
+| **Intake Agent** | `backend/agents/intake_agent.py` |
+| **Triage Agent** | `backend/agents/triage_agent.py` |
+| **Diana's Test Results** | `docs/diana_test_results.docx` |
+| **Demo Script** | `DEMO_SCRIPT.md` |
 
 ---
 

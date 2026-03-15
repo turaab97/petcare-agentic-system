@@ -89,24 +89,53 @@ Walk through each response turn:
 
 ---
 
-## 5. Live Demo — Multilingual (3 min)
+## 5. Live Demo — Multilingual: English + Chinese (4 min)
 
-> **Goal:** Show all 7 languages. Switch language, run a quick scenario.
+> **Goal:** Show live-tested multilingual capability. English and Chinese have been fully tested end-to-end. The other five languages (French, Spanish, Arabic, Hindi, Urdu) are fully implemented and will be demonstrated briefly — full test coverage is documented in the report.
 
-**For each language, switch the selector and type the prompt below, then show the response:**
+### 5a. Chinese Full Flow (2–3 min)
 
-| Language | Type this |
-|----------|-----------|
-| **French** | `Mon chat vomit depuis deux jours.` |
-| **Spanish** | `Mi perro no está comiendo nada. Está muy cansado.` |
-| **Chinese** | `我的狗狗今天呕吐了三次，不吃东西。` |
-| **Arabic** | `قطتي لا تأكل منذ يومين وهي خاملة جداً.` |
-| **Hindi** | `मेरे कुत्ते ने आज तीन बार उल्टी की।` |
-| **Urdu** | `میری بلی کھانا نہیں کھا رہی اور بہت سست ہے۔` |
+**Click "New Session." Switch the language selector to 中文 (Chinese).**
 
-**Say:** "The entire pipeline — intake questions, triage rationale, guidance, and do/don't — all return in the user's language. JSON keys stay in English so the backend logic is language-agnostic."
+**Type into chat:**
+```
+我的狗狗今天呕吐了三次，不吃东西。
+```
+*(My dog has vomited three times today and isn't eating.)*
 
-> You don't need to complete the full flow for every language — just show the intake question coming back in the right language. Do French and one RTL language (Arabic or Urdu) in full.
+Walk through the full flow in Chinese:
+1. **Intake Agent** responds in Chinese — asks follow-up
+2. When asked for the pet's name, demonstrate the mixed-language fix:
+   ```
+   他叫Milky，是拉布拉多
+   ```
+   *(His name is Milky, he's a Labrador)*
+   - Point out: the system extracts "Milky" correctly from the mixed Chinese+English input
+
+3. **Triage result** appears fully in Chinese — highlight:
+   - Urgency badge displayed as **"当天就诊"** (Same-day) or **"紧急"** (Emergency) — not English
+   - Appointment slots shown with localized day/month names (e.g. "星期二, 3月 17 14:00" not "Tuesday, March 17 at 2:00 pm")
+   - The Do/Don't guidance block in Chinese
+
+**Say:** "Everything is localized end-to-end — intake questions, triage rationale, urgency labels, appointment times, and safety guidance all come back in Chinese. We discovered and fixed three Chinese-specific regressions during live testing: mixed-language pet name extraction, premature enrichment questions before a real complaint was stated, and English dates/urgency labels appearing in Chinese sessions."
+
+### 5b. Other 5 Languages — Brief Demonstration (1 min)
+
+**Say:** "The app supports five additional languages — all fully implemented, all with defined test cases. More details are in the final report."
+
+Switch through each language and type the prompt to show the intake question returns in the correct language:
+
+| Language | Type this | Expected intake response language |
+|----------|-----------|----------------------------------|
+| **Français** | `Mon chat vomit depuis deux jours.` | French |
+| **Español** | `Mi perro no está comiendo nada.` | Spanish |
+| **Arabic** | `قطتي لا تأكل منذ يومين.` | Arabic (RTL) |
+| **हिंदी** | `मेरे कुत्ते ने आज तीन बार उल्टी की।` | Hindi |
+| **اردو** | `میری بلی کھانا نہیں کھا رہی۔` | Urdu (RTL) |
+
+> You don't need to complete the full flow — just show the intake question coming back in the right language. Point out Arabic/Urdu RTL text alignment as a UI detail.
+
+**Say:** "The entire pipeline — intake questions, triage rationale, guidance, and do/don't — returns in the user's language. JSON keys stay in English so the backend logic is language-agnostic. Live testing for these five languages is the documented next step."
 
 ---
 
@@ -259,6 +288,8 @@ testcases.md
 | Same-day (GI) | `My cat has been vomiting for two days and hasn't eaten much. She seems tired.` |
 | Routine (wellness) | `I just want to book annual shots for my healthy 3-year-old lab.` |
 | Ambiguous (triggers clarification) | `My dog isn't doing well.` |
+| Chinese (GI, full flow) | `我的狗狗今天呕吐了三次，不吃东西。` |
+| Chinese (mixed pet name) | `他叫Milky，是拉布拉多` *(after intake asks for name)* |
 | French (GI) | `Mon chat vomit depuis deux jours.` |
 | Exotic (rabbit) | `My rabbit hasn't eaten in 24 hours and isn't moving much.` |
 
