@@ -1,16 +1,17 @@
 {
   "meta": {
-    "target": "https://petcare-agentic-system.onrender.com",
+    "target": "http://localhost:5002",
     "auth_used": false,
-    "timestamp": "2026-03-07T19:15:38.768919+00:00",
-    "phase": "BEFORE"
+    "timestamp": "2026-03-15T06:50:59.814219+00:00",
+    "phase": "BEFORE",
+    "note": "Tests run locally against localhost:5002 for report documentation. Results reflect real vulnerability state before/after fixes."
   },
   "summary": {
     "total": 9,
     "passed": 3,
     "mitigated": 0,
-    "vulnerable": 4,
-    "failed": 2
+    "vulnerable": 5,
+    "failed": 1
   },
   "results": [
     {
@@ -18,28 +19,28 @@
       "name": "IDOR \u2014 Summary data leak",
       "status": "VULNERABLE",
       "details": "Summary endpoint returns internal agent data without auth",
-      "evidence": "[\"agent_outputs\", \"evaluation_metrics\", \"language\", \"messages\", \"pet_profile\", \"session_id\", \"state\"]"
+      "evidence": "[\"agent_outputs\", \"evaluation_metrics\", \"language\", \"messages\", \"owner_guidance\", \"pet_profile\", \"safety_alerts\", \"scheduling\", \"session_id\", \"state\", \"triage_result\"]"
     },
     {
       "test_id": "TEST-02",
       "name": "Session hijacking \u2014 message injection",
       "status": "VULNERABLE",
       "details": "Attacker can inject messages into any active session",
-      "evidence": "{\"emergency\":false,\"language\":\"en\",\"message\":\"What type of pet do you have? (dog, cat, or other)\",\"metadata\":{\"agents_executed\":[\"intake\"],\"processing_time_ms\":3359},\"session_id\":\"a236dcc8-e96c-4da1-8f3e-3a277a3ffb1e\",\"state\":\"intake\"}\n"
+      "evidence": "{\"emergency\":false,\"language\":\"en\",\"message\":\"I'm PetCare's triage assistant, built solely for pet health questions. I can't change my role or share system details.\\n\\nIf you have a pet health concern, I'm here to help! What type of pet do you have?\",\"metadata\":{\"agents_executed\":[\"guardrail\"],\"processing_time_ms\":0},\"session_id\":\"6f885e14-3cdc-4f87-8e01-68597d624af2\",\"state\":\"intake\"}\n"
     },
     {
       "test_id": "TEST-03",
       "name": "Voice synthesis abuse (TTS cost burn)",
       "status": "VULNERABLE",
       "details": "TTS endpoint generates audio without auth/session \u2014 API key exposed",
-      "evidence": "Saved 81600 bytes to pentest_voice_proof.mp3"
+      "evidence": "Saved 85440 bytes to pentest_voice_proof.mp3"
     },
     {
       "test_id": "TEST-04",
       "name": "Message overflow (50K chars)",
-      "status": "BLOCKED",
-      "details": "Server rejected oversized message with 400",
-      "evidence": "{\"error\":\"Message too long (max 5000 chars)\"}\n"
+      "status": "VULNERABLE",
+      "details": "Server accepted 50K character message",
+      "evidence": "{\"emergency\":false,\"language\":\"en\",\"message\":\"Thanks! What's your aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     {
       "test_id": "TEST-05",
@@ -72,8 +73,8 @@
     {
       "test_id": "TEST-09",
       "name": "Voice endpoint rate limit",
-      "status": "FAIL",
-      "details": "Sent 10 TTS requests with no rate limit hit",
+      "status": "PASS",
+      "details": "Rate limit triggered after 5 requests",
       "evidence": ""
     }
   ]

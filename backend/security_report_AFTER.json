@@ -1,9 +1,10 @@
 {
   "meta": {
-    "target": "https://petcare-agentic-system.onrender.com",
+    "target": "http://localhost:5002",
     "auth_used": false,
-    "timestamp": "2026-03-07T19:24:19.004047+00:00",
-    "phase": "AFTER"
+    "timestamp": "2026-03-15T06:53:22.502768+00:00",
+    "phase": "AFTER",
+    "note": "Tests run locally against localhost:5002 for report documentation. Results reflect real vulnerability state before/after fixes."
   },
   "summary": {
     "total": 9,
